@@ -257,43 +257,115 @@ p { color: var(--text-secondary); line-height: 1.5; }
   color: white;
 }
 
-/* Month Selector */
-.month-selector {
-  display: flex;
-  gap: 0.5rem;
+/* Calendar */
+.calendario {
+  padding: 1.25rem;
   margin-bottom: 1.5rem;
-  overflow-x: auto;
-  padding-bottom: 0.5rem;
-  scrollbar-width: none;
 }
 
-.month-selector::-webkit-scrollbar {
-  display: none;
+.calendario-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
 }
 
-.month-btn {
-  padding: 0.5rem 1rem;
+.cal-nav-btn {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius-full);
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-  font-weight: 500;
+  color: var(--text-primary);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 1.3rem;
   cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.cal-nav-btn:hover {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: var(--accent-primary);
+}
+
+.cal-titulo {
+  cursor: pointer;
+  text-align: center;
+}
+
+.cal-mes {
+  font-size: 1.1rem;
+  font-weight: 600;
   text-transform: capitalize;
 }
 
-.month-btn:hover {
-  background: rgba(99, 102, 241, 0.15);
-  color: var(--text-primary);
+.cal-titulo:hover .cal-mes {
+  color: var(--accent-primary);
 }
 
-.month-btn.active {
+.cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin-bottom: 0.5rem;
+}
+
+.cal-weekday {
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0.25rem 0;
+}
+
+.cal-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.cal-day {
+  position: relative;
+  text-align: center;
+  padding: 0.4rem 0;
+  font-size: 0.85rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  transition: all 0.15s;
+}
+
+.cal-day.empty {
+  pointer-events: none;
+}
+
+.cal-day.hoje {
   background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
   color: white;
-  border-color: transparent;
+  font-weight: 700;
+}
+
+.cal-day.com-gasto {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.cal-dot {
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+.cal-day.hoje .cal-dot {
+  background: white;
 }
 
 /* Gastos List */
@@ -322,6 +394,14 @@ p { color: var(--text-secondary); line-height: 1.5; }
   border-color: rgba(99, 102, 241, 0.3);
 }
 
+.gasto-item.clickable {
+  cursor: pointer;
+}
+
+.gasto-item.clickable:hover {
+  background: rgba(99, 102, 241, 0.08);
+}
+
 .gasto-info {
   display: flex;
   justify-content: space-between;
@@ -343,6 +423,10 @@ p { color: var(--text-secondary); line-height: 1.5; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.parcela-icon {
+  font-size: 0.8rem;
 }
 
 .gasto-tags {
@@ -398,4 +482,153 @@ p { color: var(--text-secondary); line-height: 1.5; }
 
 .delete-btn:hover {
   opacity: 1 !important;
+}
+
+/* Parcelas Modal */
+.parcelas-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.parcelas-titulo {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--accent-primary);
+}
+
+.parcelas-resumo {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.parcela-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-md);
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-value {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.parcela-progresso {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.progresso-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.progresso-bar {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.progresso-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-primary), var(--success));
+  border-radius: var(--radius-full);
+  transition: width 0.5s ease;
+}
+
+.progresso-footer {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.parcelas-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.timeline-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.timeline-item:last-child {
+  border-bottom: none;
+}
+
+.timeline-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.timeline-item.paga .timeline-dot {
+  background: var(--success);
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+}
+
+.timeline-item.pendente .timeline-dot {
+  background: rgba(255, 255, 255, 0.15);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.timeline-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.timeline-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.timeline-data {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-transform: capitalize;
+}
+
+.timeline-valor {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+}
+
+.timeline-valor span:first-child {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.timeline-status {
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.timeline-status.paga {
+  color: var(--success);
+}
+
+.timeline-status.pendente {
+  color: var(--warning);
 }
