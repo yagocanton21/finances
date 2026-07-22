@@ -82,7 +82,7 @@ function App() {
     const payload = {
       descricao: formData.get('descricao'),
       valor: parseMoney(formData.get('valor')),
-      data: new Date().toISOString(),
+      data: formData.get('data'),
       cartao_id: Number(formData.get('cartao_id'))
     }
     await fetch(`${API_URL}/receitas/`, {
@@ -100,7 +100,7 @@ function App() {
     const payload = {
       descricao: formData.get('descricao'),
       valor: parseMoney(formData.get('valor')),
-      data: new Date().toISOString(),
+      data: formData.get('data'),
       tipo_pagamento: formData.get('tipo_pagamento'),
       parcelas: Number(formData.get('parcelas')),
       cartao_id: Number(formData.get('cartao_id'))
@@ -240,7 +240,11 @@ function App() {
           </div>
           <div className="form-group">
             <label>Valor (R$)</label>
-            <input name="valor" type="number" className="form-input" placeholder="Ex: 3500" required />
+            <input name="valor" type="number" step="0.01" className="form-input" placeholder="Ex: 3500" required />
+          </div>
+          <div className="form-group">
+            <label>Data de Recebimento</label>
+            <input name="data" type="date" className="form-input" defaultValue={new Date().toISOString().split('T')[0]} required />
           </div>
           <div className="form-group">
             <label>Em qual conta entrou?</label>
@@ -262,7 +266,11 @@ function App() {
           </div>
           <div className="form-group">
             <label>Valor Total (R$)</label>
-            <input name="valor" type="number" className="form-input" placeholder="Ex: 1000" required />
+            <input name="valor" type="number" step="0.01" className="form-input" placeholder="Ex: 1000" required />
+          </div>
+          <div className="form-group">
+            <label>Data da Compra</label>
+            <input name="data" type="date" className="form-input" defaultValue={new Date().toISOString().split('T')[0]} required />
           </div>
           <div className="form-group">
             <label>Forma de Pagamento</label>
