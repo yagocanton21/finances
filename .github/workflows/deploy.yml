@@ -89,3 +89,20 @@ jobs:
             sleep 10
             
             docker compose exec -T api alembic upgrade head
+
+  alert_hermes_failure:
+    name: Alert Hermes on Failure
+    runs-on: ubuntu-latest
+    if: failure()
+    needs: [test, deploy]
+    steps:
+      - name: Send Webhook to Hermes
+        run: |
+          curl -X POST http://137.131.128.173:8644/hooks/query \
+          -H "Content-Type: application/json" \
+          -d '{
+            "secret": "FQZ2gzVJPW69dHG6bgevEYTYoq94ekoX8HoQw2yxl2s",
+            "body": {
+              "query": "Atenção Chefe: O último código de Finanças falhou na esteira do GitHub Actions e quebrou o sistema. Por favor, acesse a VPS3 via SSH e investigue o erro!"
+            }
+          }'
