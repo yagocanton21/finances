@@ -1,5 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from typing import List, Optional
+from datetime import datetime, timedelta
+import pytz
 from database import get_db
 from models import Categoria, Cartao, GastoDiario
 from schemas import CategoriaBase, CartaoBase, GastoDiarioBase
@@ -23,7 +27,42 @@ def criar_cartao(cartao_in: CartaoBase, db: Session = Depends(get_db)):
 def listar_cartoes(db: Session = Depends(get_db)):
     try:
         cartoes = db.query(Cartao).all()
-        return cartoes
+        
+        fuso = pytz.timezone("America/Sao_Paulo")
+        hoje = datetime.now(fuso)
+        
+        resultado = []
+        for c in cartoes:
+            # Converte pra dict pra não sujar o banco de dados
+            cartao_dict = c.__dict__.copy()
+            if '_sa_instance_state' in cartao_dict:
+                del cartao_dict['_sa_instance_state']
+                
+            gastos = db.query(GastoDiario).filter(
+                GastoDiario.cartao_id == c.id,
+                GastoDiario.tipo_pagamento == 'credito'
+            ).all()
+            
+            fatura_calc = 0.0
+            dia_fechamento = c.data_fatura if c.data_fatura else 15
+            for g in gastos:
+                d = g.data
+                mes_fatura = d.month - 1
+                ano_fatura = d.year
+                
+                if d.day > dia_fechamento:
+                    mes_fatura += 1
+                    if mes_fatura > 11:
+                        mes_fatura = 0
+                        ano_fatura += 1
+                        
+                if mes_fatura == (hoje.month - 1) and ano_fatura == hoje.year:
+                    fatura_calc += g.valor
+                    
+            cartao_dict['fatura_atual'] = round(fatura_calc, 2)
+            resultado.append(cartao_dict)
+            
+        return resultado
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Erro ao listar cartoes: {str(e)}')
 
