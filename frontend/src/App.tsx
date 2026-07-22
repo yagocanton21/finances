@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import Modal from './components/Modal'
+import GastosList from './components/GastosList'
 
 interface Cartao {
   id: number;
@@ -23,6 +24,7 @@ function App() {
   const [isCartaoModalOpen, setIsCartaoModalOpen] = useState(false)
   const [isReceitaModalOpen, setIsReceitaModalOpen] = useState(false)
   const [isGastoModalOpen, setIsGastoModalOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'gastos'>('dashboard')
 
   const fetchCartoes = async () => {
     try {
@@ -146,7 +148,19 @@ function App() {
         </div>
       </header>
 
+      {/* Navegação por Abas */}
+      <div className="glass-panel nav-tabs">
+        <button className={`nav-tab ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
+          📊 Dashboard
+        </button>
+        <button className={`nav-tab ${activeTab === 'gastos' ? 'active' : ''}`} onClick={() => setActiveTab('gastos')}>
+          📋 Meus Gastos
+        </button>
+      </div>
+
       <main>
+      {activeTab === 'dashboard' ? (
+        <>
         <div className="action-bar">
           <button className="btn btn-primary" onClick={() => setIsReceitaModalOpen(true)}>+ Nova Receita</button>
           <button className="btn transition-all" style={{ background: 'var(--danger)', color: 'white' }} onClick={() => setIsGastoModalOpen(true)}>- Novo Gasto</button>
@@ -212,6 +226,10 @@ function App() {
             ))}
           </div>
         )}
+        </>
+      ) : (
+        <GastosList apiUrl={API_URL} activeProfile={activeProfile} />
+      )}
       </main>
 
       {/* MODAIS */}
