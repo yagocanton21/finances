@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import GastoForm from './components/GastoForm'
-ISTO EH UM ERRO PROPOSITAL;
 import GastosList from './components/GastosList'
 
 interface Cartao {
