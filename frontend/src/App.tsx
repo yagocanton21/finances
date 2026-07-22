@@ -46,7 +46,7 @@ function App() {
         
         let faturaCalculada = 0
         gastosData.forEach((g: any) => {
-          if (g.cartao_id === cartao.id && g.tipo_pagamento.toLowerCase() === 'credito') {
+          if (g.cartao_id === cartao.id && g.tipo_pagamento.toLowerCase() === 'credito' && !g.pago) {
             const d = new Date(g.data)
             let mesFatura = d.getMonth()
             let anoFatura = d.getFullYear()

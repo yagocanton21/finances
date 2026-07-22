@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import extract
+from typing import Optional
 from database import get_db
 from models import GastoDiario, Cartao
 from schemas import GastoDiarioBase
@@ -27,7 +29,6 @@ def criar_gasto_diario(gasto_in: GastoDiarioBase, db: Session = Depends(get_db))
             
         elif db_gasto.tipo_pagamento.lower() == 'credito':
             if gasto_in.parcelas <= 1:
-                cartao.fatura_atual += db_gasto.valor
                 cartao.limite -= db_gasto.valor
                 db.add(db_gasto)
                 db.commit()
@@ -40,9 +41,6 @@ def criar_gasto_diario(gasto_in: GastoDiarioBase, db: Session = Depends(get_db))
                 
                 # Valor exato da parcela (ex: 1000 / 10 = 100)
                 valor_parcela = int(db_gasto.valor / gasto_in.parcelas)
-                
-                # Apenas a parcela 1 entra na fatura desse mês
-                cartao.fatura_atual += valor_parcela
                 
                 primeiro_gasto = None
                 for i in range(gasto_in.parcelas):
@@ -69,9 +67,14 @@ def criar_gasto_diario(gasto_in: GastoDiarioBase, db: Session = Depends(get_db))
         raise HTTPException(status_code=500, detail=f'Erro ao criar gasto diário: {str(e)}')
 
 @router.get('/')
-def listar_gastos_diarios(db: Session = Depends(get_db)):
+def listar_gastos_diarios(mes: Optional[int] = None, ano: Optional[int] = None, db: Session = Depends(get_db)):
     try:
-        return db.query(GastoDiario).all()
+        query = db.query(GastoDiario)
+        if mes:
+            query = query.filter(extract('month', GastoDiario.data) == mes)
+        if ano:
+            query = query.filter(extract('year', GastoDiario.data) == ano)
+        return query.all()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Erro ao listar gastos diários: {str(e)}')
 
@@ -102,7 +105,6 @@ def atualizar_gasto_diario(id: int, gasto_in: GastoDiarioBase, db: Session = Dep
             if db_gasto.tipo_pagamento.lower() == 'debito' or db_gasto.tipo_pagamento.lower() == 'pix':
                 cartao_antigo.saldo += db_gasto.valor
             elif db_gasto.tipo_pagamento.lower() == 'credito':
-                cartao_antigo.fatura_atual -= db_gasto.valor
                 cartao_antigo.limite += db_gasto.valor
                 
         # Atualizar os dados do Gasto
@@ -121,7 +123,6 @@ def atualizar_gasto_diario(id: int, gasto_in: GastoDiarioBase, db: Session = Dep
         if db_gasto.tipo_pagamento.lower() == 'debito' or db_gasto.tipo_pagamento.lower() == 'pix':
             cartao_novo.saldo -= db_gasto.valor
         elif db_gasto.tipo_pagamento.lower() == 'credito':
-            cartao_novo.fatura_atual += db_gasto.valor
             cartao_novo.limite -= db_gasto.valor
             
         # Salva tudo de uma vez
@@ -151,7 +152,6 @@ def deletar_gasto_diario(id: int, db: Session = Depends(get_db)):
         if db_gasto.tipo_pagamento.lower() == 'debito' or db_gasto.tipo_pagamento.lower() == 'pix':
             cartao.saldo += db_gasto.valor
         elif db_gasto.tipo_pagamento.lower() == 'credito':
-            cartao.fatura_atual -= db_gasto.valor
             cartao.limite += db_gasto.valor     
         
         db.delete(db_gasto)

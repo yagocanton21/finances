@@ -1,5 +1,5 @@
 from database import Base
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Float
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Float, Boolean
 from sqlalchemy.orm import relationship
 
 class GastoDiario(Base):
@@ -12,6 +12,7 @@ class GastoDiario(Base):
     parcelas = Column(Integer)
     categoria_id = Column(Integer, ForeignKey('categorias.id'))
     cartao_id = Column(Integer, ForeignKey('cartoes.id'))
+    pago = Column(Boolean, default=False)
     
     categoria = relationship("Categoria", back_populates="gastos")
     cartao = relationship("Cartao", back_populates="gastos")

@@ -10,6 +10,7 @@ class GastoDiarioBase(BaseModel):
     cartao_id: int
     tipo_pagamento: str
     parcelas: int = 1
+    pago: Optional[bool] = False
     
 class GastoDiarioCreate(GastoDiarioBase):
     pass

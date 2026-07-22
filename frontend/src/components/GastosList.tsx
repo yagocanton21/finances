@@ -9,6 +9,7 @@ interface Gasto {
   tipo_pagamento: string;
   parcelas: number;
   cartao_id: number;
+  pago?: boolean;
 }
 
 interface Cartao {
@@ -80,14 +81,13 @@ export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
 
   const totalMes = gastosFiltrados.reduce((acc, g) => acc + g.valor, 0)
 
-  // Calcular Projeção de Faturas (Crédito) para o mês selecionado
-  const projecaoFatura = gastos.filter(g => cartaoIds.has(g.cartao_id) && g.tipo_pagamento.toLowerCase() === 'credito')
+  // Calcular Projeção de Faturas (Crédito) para o mês selecionado ignorando os pagos
+  const projecaoFatura = gastos.filter(g => cartaoIds.has(g.cartao_id) && g.tipo_pagamento.toLowerCase() === 'credito' && !g.pago)
     .reduce((acc, g) => {
       const d = new Date(g.data)
       const cartao = cartoesDoPerfil.find(c => c.id === g.cartao_id)
       const diaFechamento = cartao?.data_fatura || 15
       
-      // Mês da fatura em que esse gasto entra
       let mesFatura = d.getMonth()
       let anoFatura = d.getFullYear()
       if (d.getDate() > diaFechamento) {
@@ -301,6 +301,7 @@ export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
                         <span className="gasto-descricao">
                           {gasto.descricao}
                           {temParcela && <span className="parcela-icon"> 📊</span>}
+                          {(gasto as any).pago && <span className="badge" style={{ background: 'var(--success)', color: 'var(--bg)', marginLeft: '0.5rem', opacity: 0.9, padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem' }}>Pago</span>}
                         </span>
                         <div className="gasto-tags">
                           <span className="gasto-badge" style={{ background: badge.color, color: badge.text }}>

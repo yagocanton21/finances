@@ -40,7 +40,8 @@ def listar_cartoes(db: Session = Depends(get_db)):
                 
             gastos = db.query(GastoDiario).filter(
                 GastoDiario.cartao_id == c.id,
-                GastoDiario.tipo_pagamento == 'credito'
+                GastoDiario.tipo_pagamento == 'credito',
+                GastoDiario.pago == False
             ).all()
             
             fatura_calc = 0.0
@@ -125,28 +126,47 @@ def pagar_fatura(id: int, db: Session = Depends(get_db)):
         if not cartao:
             raise HTTPException(status_code=404, detail='Cartão não encontrado')
             
-        valor_fatura = cartao.fatura_atual
+        # Calcular o valor exato da fatura atual dinamicamente
+        from datetime import datetime
+        import pytz
+        fuso = pytz.timezone("America/Sao_Paulo")
+        hoje = datetime.now(fuso)
         
-        # 1. Paga a fatura
-        cartao.saldo -= valor_fatura
-        cartao.limite += valor_fatura
-        cartao.fatura_atual = 0
-        
-        # 2. Puxa as parcelas do próximo mês
-        from datetime import datetime, timedelta
-        hoje = datetime.now()
-        daqui_30_dias = hoje + timedelta(days=30)
-        
-        # Busca gastos futuros desse cartão no crédito
-        gastos_futuros = db.query(GastoDiario).filter(
-            GastoDiario.cartao_id == id,
+        gastos = db.query(GastoDiario).filter(
+            GastoDiario.cartao_id == cartao.id,
             GastoDiario.tipo_pagamento.ilike('credito'),
-            GastoDiario.data > hoje,
-            GastoDiario.data <= daqui_30_dias
+            GastoDiario.pago == False
         ).all()
         
-        valor_proximo_mes = sum(g.valor for g in gastos_futuros)
-        cartao.fatura_atual += valor_proximo_mes
+        valor_fatura = 0.0
+        dia_fechamento = cartao.data_fatura if cartao.data_fatura else 15
+        
+        gastos_para_pagar = []
+        for g in gastos:
+            d = g.data
+            mes_fatura = d.month - 1
+            ano_fatura = d.year
+            
+            if d.day > dia_fechamento:
+                mes_fatura += 1
+                if mes_fatura > 11:
+                    mes_fatura = 0
+                    ano_fatura += 1
+                    
+            if mes_fatura == (hoje.month - 1) and ano_fatura == hoje.year:
+                valor_fatura += g.valor
+                gastos_para_pagar.append(g)
+        
+        # 1. Abate do saldo a fatura total calculada
+        cartao.saldo -= valor_fatura
+        # 2. Devolve o limite para o cartão
+        cartao.limite += valor_fatura
+        
+        # 3. Marca esses gastos específicos como PAGOS para saírem da próxima conta
+        for gp in gastos_para_pagar:
+            gp.pago = True
+            
+        cartao.fatura_atual = 0 # Pode deixar zerado na tabela original, o dinâmico resolve
         
         db.commit()
         db.refresh(cartao)
@@ -154,10 +174,9 @@ def pagar_fatura(id: int, db: Session = Depends(get_db)):
         # Convertemos para dict para retornar
         return {
             "mensagem": "Fatura paga com sucesso!",
-            "valor_pago": valor_fatura,
-            "nova_fatura": cartao.fatura_atual,
-            "novo_saldo": cartao.saldo,
-            "novo_limite": cartao.limite
+            "valor_pago": round(valor_fatura, 2),
+            "novo_saldo": round(cartao.saldo, 2),
+            "novo_limite": round(cartao.limite, 2)
         }
     except HTTPException:
         raise
