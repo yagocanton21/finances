@@ -1,0 +1,26 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.env
+.env
+.venv/
+venv/
+ENV/
+
+# Ide / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Data
+*.sqlite3
+db.sqlite3
+
+# Frontend (if built from root context)
+frontend/node_modules/
+frontend/dist/
