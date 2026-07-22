@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import Modal from './components/Modal'
+import GastoForm from './components/GastoForm'
+ISTO EH UM ERRO PROPOSITAL PARA ACIONAR O HERMES;
 import GastosList from './components/GastosList'
 
 interface Cartao {
