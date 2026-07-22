@@ -27,10 +27,10 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
@@ -57,8 +57,6 @@ jobs:
           
           # Run the test script
           python scratch/test_api.py || echo "Warning: Tests might need adjustment for CI. Continuing."
-          # NOTE: Normally we would run pytest here and fail the pipeline on error.
-          # We use test_api.py as a sanity check for now.
 
   deploy:
     name: Deploy to VPS
@@ -73,17 +71,14 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            # Caminho oficial do projeto na VPS
             cd /home/ubuntu/finan-as
             
-            # Puxa o codigo mais novo (assumindo que o git remote ja esta configurado la)
-            git pull origin main
+            # Força a VPS a inicializar o git caso nao seja, e espelha EXATAMENTE o github
+            git init
+            git remote add origin https://github.com/yagocanton21/finances.git || true
+            git fetch origin
+            git reset --hard origin/main
             
-            # Reconstroi o frontend e a API
             docker compose build
-            
-            # Reinicia os conteineres em modo detach
             docker compose up -d
-            
-            # Roda as migracoes do banco
             docker compose exec -T api alembic upgrade head
