@@ -98,11 +98,11 @@ jobs:
     steps:
       - name: Send Webhook to Hermes
         run: |
-          curl -X POST http://137.131.128.173:8644/hooks/query \
+          SECRET="FQZ2gzVJPW69dHG6bgevEYTYoq94ekoX8HoQw2yxl2s"
+          PAYLOAD='{"query": "Atenção Chefe: O último código de Finanças falhou na esteira do GitHub Actions e quebrou o sistema. Por favor, acesse a VPS3 via SSH e investigue o erro!"}'
+          SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$SECRET" | sed 's/^.* //')
+          
+          curl -X POST http://137.131.128.173:8644/webhooks/query \
           -H "Content-Type: application/json" \
-          -d '{
-            "secret": "FQZ2gzVJPW69dHG6bgevEYTYoq94ekoX8HoQw2yxl2s",
-            "body": {
-              "query": "Atenção Chefe: O último código de Finanças falhou na esteira do GitHub Actions e quebrou o sistema. Por favor, acesse a VPS3 via SSH e investigue o erro!"
-            }
-          }'
+          -H "X-Hub-Signature-256: sha256=$SIGNATURE" \
+          -d "$PAYLOAD"
