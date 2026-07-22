@@ -26,20 +26,60 @@ function App() {
   const [isGastoModalOpen, setIsGastoModalOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'dashboard' | 'gastos'>('dashboard')
 
-  const fetchCartoes = async () => {
+  // Recalcular faturas dinamicamente
+  const [gastos, setGastos] = useState<any[]>([])
+
+  const fetchDados = async () => {
     try {
-      const response = await fetch(`${API_URL}/cartoes/`)
-      const data = await response.json()
-      setCartoes(data)
+      const [cartoesRes, gastosRes] = await Promise.all([
+        fetch(`${API_URL}/cartoes/`),
+        fetch(`${API_URL}/gastos_diarios/`)
+      ])
+      const cartoesData = await cartoesRes.json()
+      const gastosData = await gastosRes.json()
+      
+      // Motor de cálculo de faturas
+      const hoje = new Date()
+      const mesAtual = hoje.getMonth()
+      const anoAtual = hoje.getFullYear()
+
+      cartoesData.forEach((cartao: any) => {
+        const diaFechamento = cartao.data_fatura || 15
+        
+        let faturaCalculada = 0
+        gastosData.forEach((g: any) => {
+          if (g.cartao_id === cartao.id && g.tipo_pagamento.toLowerCase() === 'credito') {
+            const d = new Date(g.data)
+            let mesFatura = d.getMonth()
+            let anoFatura = d.getFullYear()
+            
+            if (d.getDate() > diaFechamento) {
+              mesFatura += 1
+              if (mesFatura > 11) {
+                mesFatura = 0
+                anoFatura += 1
+              }
+            }
+            
+            if (mesFatura === mesAtual && anoFatura === anoAtual) {
+              faturaCalculada += g.valor
+            }
+          }
+        })
+        cartao.fatura_atual = faturaCalculada
+      })
+
+      setCartoes(cartoesData)
+      setGastos(gastosData)
     } catch (error) {
-      console.error("Erro ao buscar cartões:", error)
+      console.error("Erro ao buscar dados:", error)
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
-    fetchCartoes()
+    fetchDados()
   }, [])
 
   // Filtragem e Cálculos
@@ -113,13 +153,13 @@ function App() {
       body: JSON.stringify(payload)
     })
     setIsGastoModalOpen(false)
-    fetchCartoes()
+    fetchDados()
   }
 
   const handlePagarFatura = async (cartaoId: number) => {
     if (!confirm("Confirmar pagamento da fatura com o saldo da conta?")) return
     await fetch(`${API_URL}/cartoes/${cartaoId}/pagar_fatura`, { method: 'POST' })
-    fetchCartoes()
+    fetchDados()
   }
 
   return (

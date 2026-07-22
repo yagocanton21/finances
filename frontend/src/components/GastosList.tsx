@@ -15,6 +15,7 @@ interface Cartao {
   id: number;
   nome: string;
   dono: string;
+  data_fatura: number;
 }
 
 interface GastosListProps {
@@ -78,6 +79,30 @@ export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
     .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
 
   const totalMes = gastosFiltrados.reduce((acc, g) => acc + g.valor, 0)
+
+  // Calcular Projeção de Faturas (Crédito) para o mês selecionado
+  const projecaoFatura = gastos.filter(g => cartaoIds.has(g.cartao_id) && g.tipo_pagamento.toLowerCase() === 'credito')
+    .reduce((acc, g) => {
+      const d = new Date(g.data)
+      const cartao = cartoesDoPerfil.find(c => c.id === g.cartao_id)
+      const diaFechamento = cartao?.data_fatura || 15
+      
+      // Mês da fatura em que esse gasto entra
+      let mesFatura = d.getMonth()
+      let anoFatura = d.getFullYear()
+      if (d.getDate() > diaFechamento) {
+        mesFatura += 1
+        if (mesFatura > 11) {
+          mesFatura = 0
+          anoFatura += 1
+        }
+      }
+      
+      if (mesFatura === mesAtual && anoFatura === anoAtual) {
+        return acc + g.valor
+      }
+      return acc
+    }, 0)
 
   // Agrupar por dia
   const gastosPorDia: Record<string, Gasto[]> = {}
@@ -226,16 +251,30 @@ export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
       </div>
 
       {/* Resumo do Mês */}
-      <div className="glass-panel summary-box hover-lift transition-all" style={{ marginBottom: '1.5rem' }}>
-        <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
-          Total em {nomeMes}
-        </span>
-        <span className="summary-value" style={{ color: 'var(--danger)' }}>
-          {formatMoney(totalMes)}
-        </span>
-        <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-          {gastosFiltrados.length} {gastosFiltrados.length === 1 ? 'lançamento' : 'lançamentos'}
-        </span>
+      <div className="dashboard-grid">
+        <div className="glass-panel summary-box hover-lift transition-all" style={{ marginBottom: '1.5rem' }}>
+          <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
+            Gastos Totais ({nomeMes})
+          </span>
+          <span className="summary-value" style={{ color: 'var(--text-primary)' }}>
+            {formatMoney(totalMes)}
+          </span>
+          <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+            {gastosFiltrados.length} {gastosFiltrados.length === 1 ? 'lançamento' : 'lançamentos'} no mês civil
+          </span>
+        </div>
+
+        <div className="glass-panel summary-box hover-lift transition-all" style={{ marginBottom: '1.5rem', borderLeft: '4px solid var(--accent-primary)' }}>
+          <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
+            Projeção de Faturas ({nomeMes})
+          </span>
+          <span className="summary-value" style={{ color: 'var(--danger)' }}>
+            {formatMoney(projecaoFatura)}
+          </span>
+          <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+            Soma dos cartões de crédito para este vencimento
+          </span>
+        </div>
       </div>
 
       {/* Lista de Gastos */}
