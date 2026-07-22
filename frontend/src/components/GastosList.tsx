@@ -69,7 +69,6 @@ export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
   const cartaoNomes = Object.fromEntries(cartoesDoPerfil.map(c => [c.id, c.nome]))
 
   // Filtrar gastos por perfil e mês/ano
-  const mesSelecionado = `${anoAtual}-${String(mesAtual + 1).padStart(2, '0')}`
   const gastosFiltrados = gastos
     .filter(g => cartaoIds.has(g.cartao_id))
     .filter(g => {
