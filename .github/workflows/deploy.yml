@@ -81,4 +81,8 @@ jobs:
             
             docker compose build
             docker compose up -d
+            
+            # Aguarda o banco de dados Postgres inicializar completamente antes de migrar
+            sleep 10
+            
             docker compose exec -T api alembic upgrade head
