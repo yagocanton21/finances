@@ -27,8 +27,6 @@ function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'gastos'>('dashboard')
 
   // Recalcular faturas dinamicamente
-  const [gastos, setGastos] = useState<any[]>([])
-
   const fetchDados = async () => {
     try {
       const [cartoesRes, gastosRes] = await Promise.all([
@@ -70,7 +68,6 @@ function App() {
       })
 
       setCartoes(cartoesData)
-      setGastos(gastosData)
     } catch (error) {
       console.error("Erro ao buscar dados:", error)
     } finally {
@@ -115,7 +112,7 @@ function App() {
       body: JSON.stringify(payload)
     })
     setIsCartaoModalOpen(false)
-    fetchCartoes()
+    fetchDados()
   }
 
   const handleCriarReceita = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -133,7 +130,7 @@ function App() {
       body: JSON.stringify(payload)
     })
     setIsReceitaModalOpen(false)
-    fetchCartoes()
+    fetchDados()
   }
 
   const handleCriarGasto = async (e: React.FormEvent<HTMLFormElement>) => {
