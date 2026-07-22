@@ -71,6 +71,8 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            # Garante que a pasta existe
+            mkdir -p /home/ubuntu/finan-as
             cd /home/ubuntu/finan-as
             
             # Força a VPS a inicializar o git caso nao seja, e espelha EXATAMENTE o github
