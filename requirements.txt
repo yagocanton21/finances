@@ -6,3 +6,4 @@ python-dotenv
 pydantic
 alembic
 pytz
+python-dateutil

@@ -6,6 +6,7 @@ from database import get_db
 from models import GastoDiario, Cartao
 from schemas import GastoDiarioBase
 from datetime import timedelta
+from dateutil.relativedelta import relativedelta
 
 router = APIRouter()
 
@@ -35,19 +36,20 @@ def criar_gasto_diario(gasto_in: GastoDiarioBase, db: Session = Depends(get_db))
                 db.refresh(db_gasto)
                 return db_gasto
             else:
-                
                 # Subtrai o valor TOTAL do limite
                 cartao.limite -= db_gasto.valor
                 
-                # Valor exato da parcela (ex: 1000 / 10 = 100)
-                valor_parcela = int(db_gasto.valor / gasto_in.parcelas)
+                # Valor exato da parcela preservando centavos
+                valor_parcela = round(db_gasto.valor / gasto_in.parcelas, 2)
+                valor_ultima_parcela = round(db_gasto.valor - (valor_parcela * (gasto_in.parcelas - 1)), 2)
                 
                 primeiro_gasto = None
                 for i in range(gasto_in.parcelas):
+                    valor_atual = valor_ultima_parcela if i == gasto_in.parcelas - 1 else valor_parcela
                     novo_gasto = GastoDiario(
                         descricao=f"{db_gasto.descricao} ({i+1}/{gasto_in.parcelas})",
-                        valor=valor_parcela,
-                        data=db_gasto.data + timedelta(days=30 * i), # Joga 1 mês pra frente
+                        valor=valor_atual,
+                        data=db_gasto.data + relativedelta(months=i), # Adiciona i meses mantendo o dia
                         tipo_pagamento="credito",
                         parcelas=gasto_in.parcelas,
                         categoria_id=db_gasto.categoria_id,

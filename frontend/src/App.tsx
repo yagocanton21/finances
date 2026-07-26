@@ -29,43 +29,8 @@ function App() {
   // Recalcular faturas dinamicamente
   const fetchDados = async () => {
     try {
-      const [cartoesRes, gastosRes] = await Promise.all([
-        fetch(`${API_URL}/cartoes/`),
-        fetch(`${API_URL}/gastos_diarios/`)
-      ])
+      const cartoesRes = await fetch(`${API_URL}/cartoes/`)
       const cartoesData = await cartoesRes.json()
-      const gastosData = await gastosRes.json()
-
-      // Motor de cálculo de faturas
-      const hoje = new Date()
-      const mesAtual = hoje.getMonth()
-      const anoAtual = hoje.getFullYear()
-
-      cartoesData.forEach((cartao: any) => {
-        const diaFechamento = cartao.data_fatura || 15
-
-        let faturaCalculada = 0
-        gastosData.forEach((g: any) => {
-          if (g.cartao_id === cartao.id && g.tipo_pagamento.toLowerCase() === 'credito' && !g.pago) {
-            const d = new Date(g.data)
-            let mesFatura = d.getMonth()
-            let anoFatura = d.getFullYear()
-
-            if (d.getDate() > diaFechamento) {
-              mesFatura += 1
-              if (mesFatura > 11) {
-                mesFatura = 0
-                anoFatura += 1
-              }
-            }
-
-            if (mesFatura === mesAtual && anoFatura === anoAtual) {
-              faturaCalculada += g.valor
-            }
-          }
-        })
-        cartao.fatura_atual = faturaCalculada
-      })
 
       setCartoes(cartoesData)
     } catch (error) {

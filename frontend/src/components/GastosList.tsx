@@ -48,13 +48,24 @@ export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
     const fetchData = async () => {
       setLoading(true)
       try {
-        const [gastosRes, cartoesRes] = await Promise.all([
-          fetch(`${apiUrl}/gastos_diarios/`),
+        const mesAnt = mesAtual === 0 ? 12 : mesAtual;
+        const anoAnt = mesAtual === 0 ? anoAtual - 1 : anoAtual;
+
+        const [gastosAtualRes, gastosAntRes, cartoesRes] = await Promise.all([
+          fetch(`${apiUrl}/gastos_diarios/?mes=${mesAtual + 1}&ano=${anoAtual}`),
+          fetch(`${apiUrl}/gastos_diarios/?mes=${mesAnt}&ano=${anoAnt}`),
           fetch(`${apiUrl}/cartoes/`)
         ])
-        const gastosData = await gastosRes.json()
+        
+        const gastosAtualData = await gastosAtualRes.json()
+        const gastosAntData = await gastosAntRes.json()
+        
+        // Remove duplicatas se houver (caso retorne sobreposição)
+        const allGastos = [...gastosAtualData, ...gastosAntData];
+        const uniqueGastos = Array.from(new Map(allGastos.map(g => [g.id, g])).values());
+
         const cartoesData = await cartoesRes.json()
-        setGastos(gastosData)
+        setGastos(uniqueGastos)
         setCartoes(cartoesData)
       } catch (err) {
         console.error('Erro ao buscar gastos:', err)
@@ -63,7 +74,7 @@ export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
       }
     }
     fetchData()
-  }, [apiUrl])
+  }, [apiUrl, mesAtual, anoAtual])
 
   // Filtrar cartões do perfil ativo
   const cartoesDoPerfil = cartoes.filter(c => c.dono === activeProfile)
