@@ -77,7 +77,10 @@ export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
       const d = new Date(g.data)
       return d.getMonth() === mesAtual && d.getFullYear() === anoAtual
     })
-    .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
+    .sort((a, b) => {
+      const diff = new Date(b.data).getTime() - new Date(a.data).getTime();
+      return diff !== 0 ? diff : b.id - a.id;
+    })
 
   const totalMes = gastosFiltrados.reduce((acc, g) => acc + g.valor, 0)
 
