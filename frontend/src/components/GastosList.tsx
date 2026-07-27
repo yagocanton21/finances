@@ -22,6 +22,7 @@ interface Cartao {
 interface GastosListProps {
   apiUrl: string;
   activeProfile: string;
+  viewMode: 'diarios' | 'parcelas';
 }
 
 // Formatter criado uma única vez no nível de módulo (evita recriação a cada render)
@@ -42,7 +43,7 @@ const getTipoBadge = (tipo: string) => {
   }
 }
 
-export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
+export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosListProps) {
   const [gastos, setGastos] = useState<Gasto[]>([])
   const [cartoes, setCartoes] = useState<Cartao[]>([])
   const [loading, setLoading] = useState(true)
@@ -107,6 +108,12 @@ export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
     gastos
       .filter(g => cartaoIds.has(g.cartao_id))
       .filter(g => {
+        const isParcela = g.tipo_pagamento.toLowerCase() === 'credito' && g.descricao.match(/\(\d+\/\d+\)/);
+        if (viewMode === 'diarios' && isParcela) return false;
+        if (viewMode === 'parcelas' && !isParcela) return false;
+        return true;
+      })
+      .filter(g => {
         const d = new Date(g.data)
         return d.getMonth() === mesAtual && d.getFullYear() === anoAtual
       })
@@ -114,7 +121,7 @@ export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
         const diff = new Date(b.data).getTime() - new Date(a.data).getTime();
         return diff !== 0 ? diff : b.id - a.id;
       }),
-    [gastos, cartaoIds, mesAtual, anoAtual]
+    [gastos, cartaoIds, mesAtual, anoAtual, viewMode]
   )
 
   const totalMes = useMemo(

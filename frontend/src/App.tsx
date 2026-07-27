@@ -28,7 +28,7 @@ function App() {
   const [isCartaoModalOpen, setIsCartaoModalOpen] = useState(false)
   const [isReceitaModalOpen, setIsReceitaModalOpen] = useState(false)
   const [isGastoModalOpen, setIsGastoModalOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'gastos'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'gastos' | 'parcelas'>('dashboard')
 
   // Recalcular faturas dinamicamente
   const fetchDados = async () => {
@@ -157,7 +157,10 @@ function App() {
           📊 Dashboard
         </button>
         <button className={`nav-tab ${activeTab === 'gastos' ? 'active' : ''}`} onClick={() => setActiveTab('gastos')}>
-          📋 Meus Gastos
+          📋 Gastos Diários
+        </button>
+        <button className={`nav-tab ${activeTab === 'parcelas' ? 'active' : ''}`} onClick={() => setActiveTab('parcelas')}>
+          💳 Minhas Parcelas
         </button>
       </div>
 
@@ -231,7 +234,7 @@ function App() {
             )}
           </>
         ) : (
-          <GastosList apiUrl={API_URL} activeProfile={activeProfile} />
+          <GastosList apiUrl={API_URL} activeProfile={activeProfile} viewMode={activeTab === 'gastos' ? 'diarios' : 'parcelas'} />
         )}
       </main>
 
