@@ -34,6 +34,10 @@ const formatDate = (dateStr: string) => {
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')
 }
 
+const PARCELA_TEST_REGEX = /(?:parcela\s*|\()\d+\/\d+\)?/i;
+const PARCELA_EXTRACT_REGEX = /^(.+?)(?:\s*-\s*Parcela\s*|\s*\()(\d+)\/(\d+)\)?\s*$/i;
+const PARCELA_NUM_REGEX = /(?:parcela\s*|\()(\d+)\//i;
+
 const getTipoBadge = (tipo: string) => {
   switch (tipo.toLowerCase()) {
     case 'credito': return { label: 'Crédito', color: 'rgba(139, 92, 246, 0.25)', text: '#a78bfa' }
@@ -108,7 +112,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
     gastos
       .filter(g => cartaoIds.has(g.cartao_id))
       .filter(g => {
-        const isParcela = g.tipo_pagamento.toLowerCase() === 'credito' && g.descricao.match(/\(\d+\/\d+\)/);
+        const isParcela = g.tipo_pagamento.toLowerCase() === 'credito' && g.descricao.match(PARCELA_TEST_REGEX);
         if (viewMode === 'diarios' && isParcela) return false;
         if (viewMode === 'parcelas' && !isParcela) return false;
         return true;
@@ -210,7 +214,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
   }
 
   const getParcelasInfo = (gasto: Gasto) => {
-    const match = gasto.descricao.match(/^(.+?)\s*\((\d+)\/(\d+)\)\s*$/)
+    const match = gasto.descricao.match(PARCELA_EXTRACT_REGEX)
     if (!match) return null
 
     const nomeBase = match[1].trim()
@@ -219,12 +223,12 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
 
     const parcelasRelacionadas = gastos
       .filter(g => {
-        const m = g.descricao.match(/^(.+?)\s*\(\d+\/\d+\)\s*$/)
+        const m = g.descricao.match(PARCELA_EXTRACT_REGEX)
         return m && m[1].trim() === nomeBase && g.cartao_id === gasto.cartao_id
       })
       .sort((a, b) => {
-        const ma = a.descricao.match(/\((\d+)\//)
-        const mb = b.descricao.match(/\((\d+)\//)
+        const ma = a.descricao.match(PARCELA_NUM_REGEX)
+        const mb = b.descricao.match(PARCELA_NUM_REGEX)
         return (ma ? parseInt(ma[1]) : 0) - (mb ? parseInt(mb[1]) : 0)
       })
 
@@ -246,7 +250,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
   }
 
   const handleClickGasto = (gasto: Gasto) => {
-    if (gasto.tipo_pagamento.toLowerCase() === 'credito' && gasto.descricao.match(/\(\d+\/\d+\)/)) {
+    if (gasto.tipo_pagamento.toLowerCase() === 'credito' && gasto.descricao.match(PARCELA_TEST_REGEX)) {
       setGastoSelecionado(gasto)
     }
   }
@@ -333,7 +337,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
             <div className="gastos-list">
               {gastosNoDia.map(gasto => {
                 const badge = getTipoBadge(gasto.tipo_pagamento)
-                const temParcela = gasto.tipo_pagamento.toLowerCase() === 'credito' && gasto.descricao.match(/\(\d+\/\d+\)/)
+                const temParcela = gasto.tipo_pagamento.toLowerCase() === 'credito' && gasto.descricao.match(PARCELA_TEST_REGEX)
                 return (
                   <div
                     key={gasto.id}
