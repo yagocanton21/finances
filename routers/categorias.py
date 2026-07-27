@@ -9,7 +9,7 @@ router = APIRouter()
 @router.post('/')
 def criar_categoria(categoria_in: CategoriaBase, db: Session = Depends(get_db)):
     try:
-        dados_categoria = categoria_in.dict() if hasattr(categoria_in, 'dict') else categoria_in.model_dump()
+        dados_categoria = categoria_in.model_dump()
         db_categoria = Categoria(**dados_categoria)
         db.add(db_categoria)
         db.commit()

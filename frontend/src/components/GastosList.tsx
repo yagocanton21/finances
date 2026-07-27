@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Modal from './Modal'
 
 interface Gasto {
@@ -24,6 +24,24 @@ interface GastosListProps {
   activeProfile: string;
 }
 
+// Formatter criado uma única vez no nível de módulo (evita recriação a cada render)
+const moneyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const formatMoney = (value: number) => moneyFormatter.format(value);
+
+const formatDate = (dateStr: string) => {
+  const d = new Date(dateStr)
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')
+}
+
+const getTipoBadge = (tipo: string) => {
+  switch (tipo.toLowerCase()) {
+    case 'credito': return { label: 'Crédito', color: 'rgba(139, 92, 246, 0.25)', text: '#a78bfa' }
+    case 'debito': return { label: 'Débito', color: 'rgba(59, 130, 246, 0.25)', text: '#93c5fd' }
+    case 'pix': return { label: 'PIX', color: 'rgba(16, 185, 129, 0.25)', text: '#6ee7b7' }
+    default: return { label: tipo, color: 'rgba(255,255,255,0.1)', text: '#fff' }
+  }
+}
+
 export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
   const [gastos, setGastos] = useState<Gasto[]>([])
   const [cartoes, setCartoes] = useState<Cartao[]>([])
@@ -35,14 +53,6 @@ export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
 
   // Modal de Parcelas
   const [gastoSelecionado, setGastoSelecionado] = useState<Gasto | null>(null)
-
-  const formatMoney = (value: number) =>
-    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
-
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr)
-    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')
-  }
 
   useEffect(() => {
     const fetchData = async () => {
@@ -56,11 +66,11 @@ export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
           fetch(`${apiUrl}/gastos_diarios/?mes=${mesAnt}&ano=${anoAnt}`),
           fetch(`${apiUrl}/cartoes/`)
         ])
-        
+
         const gastosAtualData = await gastosAtualRes.json()
         const gastosAntData = await gastosAntRes.json()
-        
-        // Remove duplicatas se houver (caso retorne sobreposição)
+
+        // Remove duplicatas se houver
         const allGastos = [...gastosAtualData, ...gastosAntData];
         const uniqueGastos = Array.from(new Map(allGastos.map(g => [g.id, g])).values());
 
@@ -76,57 +86,95 @@ export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
     fetchData()
   }, [apiUrl, mesAtual, anoAtual])
 
-  // Filtrar cartões do perfil ativo
-  const cartoesDoPerfil = cartoes.filter(c => c.dono === activeProfile)
-  const cartaoIds = new Set(cartoesDoPerfil.map(c => c.id))
-  const cartaoNomes = Object.fromEntries(cartoesDoPerfil.map(c => [c.id, c.nome]))
+  // ─── Cálculos memoizados: só recalculados quando as dependências mudarem ───
 
-  // Filtrar gastos por perfil e mês/ano
-  const gastosFiltrados = gastos
-    .filter(g => cartaoIds.has(g.cartao_id))
-    .filter(g => {
-      const d = new Date(g.data)
-      return d.getMonth() === mesAtual && d.getFullYear() === anoAtual
-    })
-    .sort((a, b) => {
-      const diff = new Date(b.data).getTime() - new Date(a.data).getTime();
-      return diff !== 0 ? diff : b.id - a.id;
-    })
+  const cartoesDoPerfil = useMemo(
+    () => cartoes.filter(c => c.dono === activeProfile),
+    [cartoes, activeProfile]
+  )
 
-  const totalMes = gastosFiltrados.reduce((acc, g) => acc + g.valor, 0)
+  const cartaoIds = useMemo(
+    () => new Set(cartoesDoPerfil.map(c => c.id)),
+    [cartoesDoPerfil]
+  )
 
-  // Calcular Projeção de Faturas (Crédito) para o mês selecionado ignorando os pagos
-  const projecaoFatura = gastos.filter(g => cartaoIds.has(g.cartao_id) && g.tipo_pagamento.toLowerCase() === 'credito' && !g.pago)
-    .reduce((acc, g) => {
-      const d = new Date(g.data)
-      const cartao = cartoesDoPerfil.find(c => c.id === g.cartao_id)
-      const diaFechamento = cartao?.data_fatura || 15
-      
-      let mesFatura = d.getMonth()
-      let anoFatura = d.getFullYear()
-      if (d.getDate() > diaFechamento) {
-        mesFatura += 1
-        if (mesFatura > 11) {
-          mesFatura = 0
-          anoFatura += 1
+  const cartaoNomes = useMemo(
+    () => Object.fromEntries(cartoesDoPerfil.map(c => [c.id, c.nome])),
+    [cartoesDoPerfil]
+  )
+
+  const gastosFiltrados = useMemo(() =>
+    gastos
+      .filter(g => cartaoIds.has(g.cartao_id))
+      .filter(g => {
+        const d = new Date(g.data)
+        return d.getMonth() === mesAtual && d.getFullYear() === anoAtual
+      })
+      .sort((a, b) => {
+        const diff = new Date(b.data).getTime() - new Date(a.data).getTime();
+        return diff !== 0 ? diff : b.id - a.id;
+      }),
+    [gastos, cartaoIds, mesAtual, anoAtual]
+  )
+
+  const totalMes = useMemo(
+    () => gastosFiltrados.reduce((acc, g) => acc + g.valor, 0),
+    [gastosFiltrados]
+  )
+
+  const projecaoFatura = useMemo(() =>
+    gastos
+      .filter(g => cartaoIds.has(g.cartao_id) && g.tipo_pagamento.toLowerCase() === 'credito' && !g.pago)
+      .reduce((acc, g) => {
+        const d = new Date(g.data)
+        const cartao = cartoesDoPerfil.find(c => c.id === g.cartao_id)
+        const diaFechamento = cartao?.data_fatura || 15
+
+        let mesFatura = d.getMonth()
+        let anoFatura = d.getFullYear()
+        if (d.getDate() > diaFechamento) {
+          mesFatura += 1
+          if (mesFatura > 11) {
+            mesFatura = 0
+            anoFatura += 1
+          }
         }
-      }
-      
-      if (mesFatura === mesAtual && anoFatura === anoAtual) {
-        return acc + g.valor
-      }
-      return acc
-    }, 0)
 
-  // Agrupar por dia
-  const gastosPorDia: Record<string, Gasto[]> = {}
-  for (const g of gastosFiltrados) {
-    const dia = new Date(g.data).toLocaleDateString('pt-BR')
-    if (!gastosPorDia[dia]) gastosPorDia[dia] = []
-    gastosPorDia[dia].push(g)
-  }
+        if (mesFatura === mesAtual && anoFatura === anoAtual) {
+          return acc + g.valor
+        }
+        return acc
+      }, 0),
+    [gastos, cartaoIds, cartoesDoPerfil, mesAtual, anoAtual]
+  )
 
-  // Navegação do calendário
+  const gastosPorDia = useMemo(() => {
+    const agrupado: Record<string, Gasto[]> = {}
+    for (const g of gastosFiltrados) {
+      const dia = new Date(g.data).toLocaleDateString('pt-BR')
+      if (!agrupado[dia]) agrupado[dia] = []
+      agrupado[dia].push(g)
+    }
+    return agrupado
+  }, [gastosFiltrados])
+
+  const nomeMes = useMemo(
+    () => new Date(anoAtual, mesAtual).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
+    [anoAtual, mesAtual]
+  )
+
+  const { primeiroDia, totalDias } = useMemo(() => ({
+    primeiroDia: new Date(anoAtual, mesAtual, 1).getDay(),
+    totalDias: new Date(anoAtual, mesAtual + 1, 0).getDate(),
+  }), [anoAtual, mesAtual])
+
+  const diasComGasto = useMemo(
+    () => new Set(gastosFiltrados.map(g => new Date(g.data).getDate())),
+    [gastosFiltrados]
+  )
+
+  // ─── Navegação do calendário ───
+
   const irMesAnterior = () => {
     if (mesAtual === 0) { setMesAtual(11); setAnoAtual(a => a - 1) }
     else setMesAtual(m => m - 1)
@@ -136,29 +184,12 @@ export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
     else setMesAtual(m => m + 1)
   }
   const irHoje = () => {
-    setMesAtual(new Date().getMonth())
-    setAnoAtual(new Date().getFullYear())
+    const now = new Date()
+    setMesAtual(now.getMonth())
+    setAnoAtual(now.getFullYear())
   }
 
-  const nomeMes = new Date(anoAtual, mesAtual).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
-
-  // Dias do mês para o mini calendário
-  const primeiroDia = new Date(anoAtual, mesAtual, 1).getDay()
-  const totalDias = new Date(anoAtual, mesAtual + 1, 0).getDate()
-
-  // Dias que têm gastos
-  const diasComGasto = new Set(
-    gastosFiltrados.map(g => new Date(g.data).getDate())
-  )
-
-  const getTipoBadge = (tipo: string) => {
-    switch (tipo.toLowerCase()) {
-      case 'credito': return { label: 'Crédito', color: 'rgba(139, 92, 246, 0.25)', text: '#a78bfa' }
-      case 'debito': return { label: 'Débito', color: 'rgba(59, 130, 246, 0.25)', text: '#93c5fd' }
-      case 'pix': return { label: 'PIX', color: 'rgba(16, 185, 129, 0.25)', text: '#6ee7b7' }
-      default: return { label: tipo, color: 'rgba(255,255,255,0.1)', text: '#fff' }
-    }
-  }
+  // ─── Handlers ───
 
   const handleDelete = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -171,9 +202,7 @@ export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
     }
   }
 
-  // Lógica do modal de parcelas
   const getParcelasInfo = (gasto: Gasto) => {
-    // Extrai o nome base removendo o padrão " (X/Y)" do final
     const match = gasto.descricao.match(/^(.+?)\s*\((\d+)\/(\d+)\)\s*$/)
     if (!match) return null
 
@@ -181,7 +210,6 @@ export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
     const parcelaAtual = parseInt(match[2])
     const totalParcelas = parseInt(match[3])
 
-    // Busca todas as parcelas relacionadas
     const parcelasRelacionadas = gastos
       .filter(g => {
         const m = g.descricao.match(/^(.+?)\s*\(\d+\/\d+\)\s*$/)
@@ -193,11 +221,11 @@ export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
         return (ma ? parseInt(ma[1]) : 0) - (mb ? parseInt(mb[1]) : 0)
       })
 
-    // Calcula a data estimada da última parcela
     const dataInicio = new Date(parcelasRelacionadas[0]?.data || gasto.data)
     const dataFim = new Date(dataInicio)
     dataFim.setMonth(dataFim.getMonth() + totalParcelas - 1)
 
+    const hoje = new Date()
     return {
       nomeBase,
       parcelaAtual,
@@ -206,10 +234,7 @@ export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
       valorParcela: gasto.valor,
       valorTotal: gasto.valor * totalParcelas,
       dataFim,
-      parcelasPagas: parcelasRelacionadas.filter(p => {
-        const dataParcela = new Date(p.data)
-        return dataParcela <= new Date()
-      }).length
+      parcelasPagas: parcelasRelacionadas.filter(p => new Date(p.data) <= hoje).length
     }
   }
 
@@ -242,11 +267,9 @@ export default function GastosList({ apiUrl, activeProfile }: GastosListProps) {
         </div>
 
         <div className="cal-days">
-          {/* Espaços vazios antes do primeiro dia */}
           {Array.from({ length: primeiroDia }).map((_, i) => (
             <span key={`empty-${i}`} className="cal-day empty" />
           ))}
-          {/* Dias do mês */}
           {Array.from({ length: totalDias }).map((_, i) => {
             const dia = i + 1
             const hoje = new Date()

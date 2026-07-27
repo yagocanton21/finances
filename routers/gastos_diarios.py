@@ -13,7 +13,7 @@ router = APIRouter()
 @router.post('/')
 def criar_gasto_diario(gasto_in: GastoDiarioBase, db: Session = Depends(get_db)):
     try:
-        dados_gasto = gasto_in.dict() if hasattr(gasto_in, 'dict') else gasto_in.model_dump()
+        dados_gasto = gasto_in.model_dump()
         db_gasto = GastoDiario(**dados_gasto)
        
         cartao = db.query(Cartao).filter(Cartao.id == db_gasto.cartao_id).first()
@@ -69,14 +69,20 @@ def criar_gasto_diario(gasto_in: GastoDiarioBase, db: Session = Depends(get_db))
         raise HTTPException(status_code=500, detail=f'Erro ao criar gasto diário: {str(e)}')
 
 @router.get('/')
-def listar_gastos_diarios(mes: Optional[int] = None, ano: Optional[int] = None, db: Session = Depends(get_db)):
+def listar_gastos_diarios(
+    mes: Optional[int] = None,
+    ano: Optional[int] = None,
+    limit: int = 200,
+    offset: int = 0,
+    db: Session = Depends(get_db)
+):
     try:
         query = db.query(GastoDiario)
         if mes:
             query = query.filter(extract('month', GastoDiario.data) == mes)
         if ano:
             query = query.filter(extract('year', GastoDiario.data) == ano)
-        return query.all()
+        return query.offset(offset).limit(limit).all()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Erro ao listar gastos diários: {str(e)}')
 

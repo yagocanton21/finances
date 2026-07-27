@@ -9,7 +9,7 @@ router = APIRouter()
 @router.post('/')
 def criar_receita(receita_in: ReceitaBase, db: Session = Depends(get_db)):
     try:
-        dados = receita_in.dict() if hasattr(receita_in, 'dict') else receita_in.model_dump()
+        dados = receita_in.model_dump()
         db_receita = Receita(**dados)
         
         cartao = db.query(Cartao).filter(Cartao.id == db_receita.cartao_id).first()

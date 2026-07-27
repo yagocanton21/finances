@@ -15,6 +15,10 @@ interface Cartao {
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
+// Formatter criado uma única vez no nível de módulo (evita recriação a cada render)
+const moneyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const formatMoney = (value: number) => moneyFormatter.format(value);
+
 function App() {
   const [activeProfile, setActiveProfile] = useState<'Eu' | 'Vô'>('Eu')
   const [cartoes, setCartoes] = useState<Cartao[]>([])
@@ -49,9 +53,6 @@ function App() {
   const saldoTotal = cartoesFiltrados.reduce((acc, c) => acc + c.saldo, 0)
   const faturaTotal = cartoesFiltrados.reduce((acc, c) => acc + c.fatura_atual, 0)
 
-  const formatMoney = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
-  }
 
   const parseMoney = (value: FormDataEntryValue | null) => {
     if (!value) return 0;
