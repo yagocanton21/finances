@@ -5,12 +5,14 @@ __pycache__/
 *.env
 .env
 .venv/
+.python-packages/
 venv/
 ENV/
 
 # Node / Frontend
 frontend/node_modules/
 frontend/dist/
+frontend/.npm-cache/
 frontend/.env
 frontend/.env.local
 frontend/.env.*.local

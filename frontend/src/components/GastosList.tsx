@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import Modal from './Modal'
+import { apiRequest } from '../api'
 
 interface Gasto {
   id: number;
@@ -10,6 +11,8 @@ interface Gasto {
   parcelas: number;
   cartao_id: number;
   pago?: boolean;
+  compra_id?: string | null;
+  numero_parcela?: number;
 }
 
 interface Cartao {
@@ -58,6 +61,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
 
   // Modal de Parcelas
   const [gastoSelecionado, setGastoSelecionado] = useState<Gasto | null>(null)
+  const [parcelasDetalhadas, setParcelasDetalhadas] = useState<Gasto[]>([])
 
   useEffect(() => {
     const fetchData = async () => {
@@ -66,20 +70,16 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
         const mesAnt = mesAtual === 0 ? 12 : mesAtual;
         const anoAnt = mesAtual === 0 ? anoAtual - 1 : anoAtual;
 
-        const [gastosAtualRes, gastosAntRes, cartoesRes] = await Promise.all([
-          fetch(`${apiUrl}/gastos_diarios/?mes=${mesAtual + 1}&ano=${anoAtual}`),
-          fetch(`${apiUrl}/gastos_diarios/?mes=${mesAnt}&ano=${anoAnt}`),
-          fetch(`${apiUrl}/cartoes/`)
+        const [gastosAtualData, gastosAntData, cartoesData] = await Promise.all([
+          apiRequest<Gasto[]>(`${apiUrl}/gastos_diarios/?mes=${mesAtual + 1}&ano=${anoAtual}`),
+          apiRequest<Gasto[]>(`${apiUrl}/gastos_diarios/?mes=${mesAnt}&ano=${anoAnt}`),
+          apiRequest<Cartao[]>(`${apiUrl}/cartoes/`)
         ])
-
-        const gastosAtualData = await gastosAtualRes.json()
-        const gastosAntData = await gastosAntRes.json()
 
         // Remove duplicatas se houver
         const allGastos = [...gastosAtualData, ...gastosAntData];
         const uniqueGastos = Array.from(new Map(allGastos.map(g => [g.id, g])).values());
 
-        const cartoesData = await cartoesRes.json()
         setGastos(uniqueGastos)
         setCartoes(cartoesData)
       } catch (err) {
@@ -206,10 +206,11 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
     e.stopPropagation()
     if (!confirm('Tem certeza que deseja apagar este gasto? O valor será estornado.')) return
     try {
-      await fetch(`${apiUrl}/gastos_diarios/${id}`, { method: 'DELETE' })
+      await apiRequest(`${apiUrl}/gastos_diarios/${id}`, { method: 'DELETE' })
       setGastos(prev => prev.filter(g => g.id !== id))
     } catch (err) {
       console.error('Erro ao deletar gasto:', err)
+      alert(err instanceof Error ? err.message : 'Erro ao deletar gasto')
     }
   }
 
@@ -221,12 +222,15 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
     const parcelaAtual = parseInt(match[2])
     const totalParcelas = parseInt(match[3])
 
-    const parcelasRelacionadas = gastos
+    const fonteParcelas = parcelasDetalhadas.length > 0 ? parcelasDetalhadas : gastos
+    const parcelasRelacionadas = fonteParcelas
       .filter(g => {
+        if (gasto.compra_id) return g.compra_id === gasto.compra_id
         const m = g.descricao.match(PARCELA_EXTRACT_REGEX)
         return m && m[1].trim() === nomeBase && g.cartao_id === gasto.cartao_id
       })
       .sort((a, b) => {
+        if (a.numero_parcela && b.numero_parcela) return a.numero_parcela - b.numero_parcela
         const ma = a.descricao.match(PARCELA_NUM_REGEX)
         const mb = b.descricao.match(PARCELA_NUM_REGEX)
         return (ma ? parseInt(ma[1]) : 0) - (mb ? parseInt(mb[1]) : 0)
@@ -236,22 +240,32 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
     const dataFim = new Date(dataInicio)
     dataFim.setMonth(dataFim.getMonth() + totalParcelas - 1)
 
-    const hoje = new Date()
     return {
       nomeBase,
       parcelaAtual,
       totalParcelas,
       parcelasRelacionadas,
       valorParcela: gasto.valor,
-      valorTotal: gasto.valor * totalParcelas,
+      valorTotal: parcelasRelacionadas.reduce((total, parcela) => total + parcela.valor, 0),
       dataFim,
-      parcelasPagas: parcelasRelacionadas.filter(p => new Date(p.data) <= hoje).length
+      parcelasPagas: parcelasRelacionadas.filter(p => p.pago).length
     }
   }
 
-  const handleClickGasto = (gasto: Gasto) => {
+  const handleClickGasto = async (gasto: Gasto) => {
     if (gasto.tipo_pagamento.toLowerCase() === 'credito' && gasto.descricao.match(PARCELA_TEST_REGEX)) {
       setGastoSelecionado(gasto)
+      setParcelasDetalhadas([])
+      if (gasto.compra_id) {
+        try {
+          const parcelas = await apiRequest<Gasto[]>(
+            `${apiUrl}/gastos_diarios/?compra_id=${encodeURIComponent(gasto.compra_id)}&limit=120`
+          )
+          setParcelasDetalhadas(parcelas)
+        } catch (error) {
+          console.error('Erro ao buscar parcelas:', error)
+        }
+      }
     }
   }
 
@@ -375,7 +389,14 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
       )}
 
       {/* Modal de Parcelas */}
-      <Modal isOpen={!!gastoSelecionado} onClose={() => setGastoSelecionado(null)} title="Detalhes das Parcelas">
+      <Modal
+        isOpen={!!gastoSelecionado}
+        onClose={() => {
+          setGastoSelecionado(null)
+          setParcelasDetalhadas([])
+        }}
+        title="Detalhes das Parcelas"
+      >
         {parcelasInfo && (
           <div className="parcelas-modal">
             <div className="parcelas-titulo">{parcelasInfo.nomeBase}</div>
@@ -412,7 +433,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
             <div className="parcelas-timeline">
               {parcelasInfo.parcelasRelacionadas.map((p, i) => {
                 const dataParcela = new Date(p.data)
-                const isPaga = dataParcela <= new Date()
+                const isPaga = Boolean(p.pago)
                 return (
                   <div key={p.id} className={`timeline-item ${isPaga ? 'paga' : 'pendente'}`}>
                     <div className="timeline-dot" />

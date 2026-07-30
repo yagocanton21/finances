@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import Modal from './components/Modal'
 import GastosList from './components/GastosList'
+import { apiRequest } from './api'
 
 interface Cartao {
   id: number;
@@ -33,9 +34,7 @@ function App() {
   // Recalcular faturas dinamicamente
   const fetchDados = async () => {
     try {
-      const cartoesRes = await fetch(`${API_URL}/cartoes/`)
-      const cartoesData = await cartoesRes.json()
-
+      const cartoesData = await apiRequest<Cartao[]>(`${API_URL}/cartoes/`)
       setCartoes(cartoesData)
     } catch (error) {
       console.error("Erro ao buscar dados:", error)
@@ -72,13 +71,17 @@ function App() {
       dia_vencimento: 20,
       fatura_atual: 0
     }
-    await fetch(`${API_URL}/cartoes/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-    setIsCartaoModalOpen(false)
-    fetchDados()
+    try {
+      await apiRequest(`${API_URL}/cartoes/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      setIsCartaoModalOpen(false)
+      await fetchDados()
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Erro ao criar conta')
+    }
   }
 
   const handleCriarReceita = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -90,13 +93,17 @@ function App() {
       data: formData.get('data'),
       cartao_id: Number(formData.get('cartao_id'))
     }
-    await fetch(`${API_URL}/receitas/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-    setIsReceitaModalOpen(false)
-    fetchDados()
+    try {
+      await apiRequest(`${API_URL}/receitas/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      setIsReceitaModalOpen(false)
+      await fetchDados()
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Erro ao criar receita')
+    }
   }
 
   const handleCriarGasto = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -110,19 +117,27 @@ function App() {
       parcelas: Number(formData.get('parcelas')),
       cartao_id: Number(formData.get('cartao_id'))
     }
-    await fetch(`${API_URL}/gastos_diarios/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-    setIsGastoModalOpen(false)
-    fetchDados()
+    try {
+      await apiRequest(`${API_URL}/gastos_diarios/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      setIsGastoModalOpen(false)
+      await fetchDados()
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Erro ao criar gasto')
+    }
   }
 
   const handlePagarFatura = async (cartaoId: number) => {
     if (!confirm("Confirmar pagamento da fatura com o saldo da conta?")) return
-    await fetch(`${API_URL}/cartoes/${cartaoId}/pagar_fatura`, { method: 'POST' })
-    fetchDados()
+    try {
+      await apiRequest(`${API_URL}/cartoes/${cartaoId}/pagar_fatura`, { method: 'POST' })
+      await fetchDados()
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Erro ao pagar fatura')
+    }
   }
 
   return (
@@ -249,7 +264,7 @@ function App() {
           </div>
           <div className="form-group">
             <label>Limite Total de Crédito</label>
-            <input name="limite" type="number" className="form-input" placeholder="Ex: 5000" required />
+            <input name="limite" type="number" min="0" step="0.01" className="form-input" placeholder="Ex: 5000" required />
           </div>
           <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '1rem' }}>Salvar Conta</button>
         </form>
@@ -264,7 +279,7 @@ function App() {
           </div>
           <div className="form-group">
             <label>Valor (R$)</label>
-            <input name="valor" type="number" step="0.01" className="form-input" placeholder="Ex: 3500" required />
+            <input name="valor" type="number" min="0.01" step="0.01" className="form-input" placeholder="Ex: 3500" required />
           </div>
           <div className="form-group">
             <label>Data de Recebimento</label>
@@ -290,7 +305,7 @@ function App() {
           </div>
           <div className="form-group">
             <label>Valor Total (R$)</label>
-            <input name="valor" type="number" step="0.01" className="form-input" placeholder="Ex: 1000" required />
+            <input name="valor" type="number" min="0.01" step="0.01" className="form-input" placeholder="Ex: 1000" required />
           </div>
           <div className="form-group">
             <label>Data da Compra</label>
@@ -306,7 +321,7 @@ function App() {
           </div>
           <div className="form-group">
             <label>Quantidade de Parcelas</label>
-            <input name="parcelas" type="number" defaultValue="1" min="1" className="form-input" required />
+            <input name="parcelas" type="number" defaultValue="1" min="1" max="120" className="form-input" required />
           </div>
           <div className="form-group">
             <label>Qual Cartão/Conta?</label>

@@ -12,7 +12,12 @@ def criar_receita(receita_in: ReceitaBase, db: Session = Depends(get_db)):
         dados = receita_in.model_dump()
         db_receita = Receita(**dados)
         
-        cartao = db.query(Cartao).filter(Cartao.id == db_receita.cartao_id).first()
+        cartao = (
+            db.query(Cartao)
+            .filter(Cartao.id == db_receita.cartao_id)
+            .with_for_update()
+            .first()
+        )
         if not cartao:
             raise HTTPException(status_code=404, detail='Cartão/Conta não encontrada')
             
@@ -25,16 +30,16 @@ def criar_receita(receita_in: ReceitaBase, db: Session = Depends(get_db)):
         return db_receita
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f'Erro ao criar receita: {str(e)}')
+        raise HTTPException(status_code=500, detail='Erro ao criar receita')
 
 @router.get('/')
 def listar_receitas(db: Session = Depends(get_db)):
     try:
         return db.query(Receita).all()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Erro ao listar receitas: {str(e)}')
+    except Exception:
+        raise HTTPException(status_code=500, detail='Erro ao listar receitas')
 
 @router.get('/{id}')
 def buscar_receita(id: int, db: Session = Depends(get_db)):
@@ -45,8 +50,8 @@ def buscar_receita(id: int, db: Session = Depends(get_db)):
         return db_receita
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Erro ao buscar receita: {str(e)}')
+    except Exception:
+        raise HTTPException(status_code=500, detail='Erro ao buscar receita')
 
 @router.put('/{id}')
 def atualizar_receita(id: int, receita_in: ReceitaBase, db: Session = Depends(get_db)):
@@ -56,7 +61,12 @@ def atualizar_receita(id: int, receita_in: ReceitaBase, db: Session = Depends(ge
             raise HTTPException(status_code=404, detail='Receita não encontrada')
             
         # 1. Estorno da receita antiga
-        cartao_antigo = db.query(Cartao).filter(Cartao.id == db_receita.cartao_id).first()
+        cartao_antigo = (
+            db.query(Cartao)
+            .filter(Cartao.id == db_receita.cartao_id)
+            .with_for_update()
+            .first()
+        )
         if cartao_antigo:
             cartao_antigo.saldo -= db_receita.valor
             
@@ -68,7 +78,12 @@ def atualizar_receita(id: int, receita_in: ReceitaBase, db: Session = Depends(ge
         db_receita.cartao_id = receita_in.cartao_id
         
         # 3. Aplicar a nova receita
-        cartao_novo = db.query(Cartao).filter(Cartao.id == db_receita.cartao_id).first()
+        cartao_novo = (
+            db.query(Cartao)
+            .filter(Cartao.id == db_receita.cartao_id)
+            .with_for_update()
+            .first()
+        )
         if not cartao_novo:
             raise HTTPException(status_code=404, detail='Nova Conta/Cartão não encontrada')
             
@@ -79,9 +94,9 @@ def atualizar_receita(id: int, receita_in: ReceitaBase, db: Session = Depends(ge
         return db_receita
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f'Erro ao atualizar receita: {str(e)}')
+        raise HTTPException(status_code=500, detail='Erro ao atualizar receita')
 
 @router.delete('/{id}')
 def deletar_receita(id: int, db: Session = Depends(get_db)):
@@ -90,7 +105,12 @@ def deletar_receita(id: int, db: Session = Depends(get_db)):
         if not db_receita:
             raise HTTPException(status_code=404, detail='Receita não encontrada')
             
-        cartao = db.query(Cartao).filter(Cartao.id == db_receita.cartao_id).first()
+        cartao = (
+            db.query(Cartao)
+            .filter(Cartao.id == db_receita.cartao_id)
+            .with_for_update()
+            .first()
+        )
         if cartao:
             # Subtrai do saldo o dinheiro que havia entrado
             cartao.saldo -= db_receita.valor
@@ -100,6 +120,6 @@ def deletar_receita(id: int, db: Session = Depends(get_db)):
         return {'mensagem': 'Receita deletada com sucesso'}
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f'Erro ao deletar receita: {str(e)}')
+        raise HTTPException(status_code=500, detail='Erro ao deletar receita')

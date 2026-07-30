@@ -1,24 +1,47 @@
+import os
+
 from fastapi import FastAPI
-from database import engine, Base
-from models import Categoria, Cartao, GastoDiario
-from routers import cartoes, categorias, gastos_diarios, receitas
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
-app = FastAPI(title="API de Finanças")
+from database import engine
+from routers import cartoes, categorias, gastos_diarios, receitas
 
+app = FastAPI(title="API de Financas")
+
+origens = [
+    origem.strip()
+    for origem in os.getenv(
+        "CORS_ORIGINS", "http://localhost:3000,http://localhost:5173"
+    ).split(",")
+    if origem.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Permite o frontend em qualquer porta (como a 5173)
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=origens,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type"],
 )
+
 
 @app.get("/")
 def read_root():
-    return {"mensagem": "API de Financas esta rodando! Acesse /docs para ver a documentacao."}
+    return {
+        "mensagem": "API de Financas esta rodando. Acesse /docs para a documentacao."
+    }
 
-app.include_router(cartoes.router, prefix='/cartoes', tags=['cartoes'])
-app.include_router(categorias.router, prefix='/categorias', tags=['categorias'])
-app.include_router(gastos_diarios.router, prefix='/gastos_diarios', tags=['gastos diários'])
-app.include_router(receitas.router, prefix='/receitas', tags=['receitas'])
+
+@app.get("/health")
+def health():
+    with engine.connect() as conexao:
+        conexao.execute(text("SELECT 1"))
+    return {"status": "ok"}
+
+
+app.include_router(cartoes.router, prefix="/cartoes", tags=["cartoes"])
+app.include_router(categorias.router, prefix="/categorias", tags=["categorias"])
+app.include_router(
+    gastos_diarios.router, prefix="/gastos_diarios", tags=["gastos diarios"]
+)
+app.include_router(receitas.router, prefix="/receitas", tags=["receitas"])

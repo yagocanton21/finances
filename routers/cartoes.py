@@ -1,8 +1,10 @@
+from datetime import datetime
+from decimal import Decimal
+
+import pytz
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
-from datetime import datetime
-import pytz
+
 from database import get_db
 from models import Cartao, GastoDiario
 from schemas import CartaoBase
@@ -10,198 +12,177 @@ from schemas import CartaoBase
 router = APIRouter()
 
 
-def _calcular_fatura_do_mes(gastos: list, dia_fechamento: int, mes_ref: int, ano_ref: int) -> float:
-    """
-    Calcula o valor da fatura de um cartão para um mês/ano de referência.
-    Centraliza a lógica de fechamento para evitar duplicação entre listar_cartoes e pagar_fatura.
-    """
-    total = 0.0
-    for g in gastos:
-        d = g.data
-        mes_fatura = d.month - 1
-        ano_fatura = d.year
-
-        if d.day > dia_fechamento:
-            mes_fatura += 1
-            if mes_fatura > 11:
-                mes_fatura = 0
-                ano_fatura += 1
-
-        if mes_fatura == (mes_ref - 1) and ano_fatura == ano_ref:
-            total += g.valor
-
-    return round(total, 2)
+def _pertence_a_fatura(
+    gasto: GastoDiario, dia_fechamento: int, mes_ref: int, ano_ref: int
+) -> bool:
+    data = gasto.data
+    mes_fatura = data.month
+    ano_fatura = data.year
+    if data.day > dia_fechamento:
+        mes_fatura += 1
+        if mes_fatura > 12:
+            mes_fatura = 1
+            ano_fatura += 1
+    return mes_fatura == mes_ref and ano_fatura == ano_ref
 
 
-@router.post('/')
+def _calcular_fatura_do_mes(
+    gastos: list[GastoDiario], dia_fechamento: int, mes_ref: int, ano_ref: int
+) -> Decimal:
+    return sum(
+        (gasto.valor for gasto in gastos if _pertence_a_fatura(
+            gasto, dia_fechamento, mes_ref, ano_ref
+        )),
+        Decimal("0"),
+    )
+
+
+@router.post("/")
 def criar_cartao(cartao_in: CartaoBase, db: Session = Depends(get_db)):
     try:
-        db_cartao = Cartao(**cartao_in.model_dump())
-        db.add(db_cartao)
+        cartao = Cartao(**cartao_in.model_dump())
+        db.add(cartao)
         db.commit()
-        db.refresh(db_cartao)
-        return db_cartao
-    except Exception as e:
+        db.refresh(cartao)
+        return cartao
+    except Exception:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f'Erro ao criar cartao: {str(e)}')
+        raise HTTPException(status_code=500, detail="Erro ao criar cartao")
 
 
-@router.get('/')
+@router.get("/")
 def listar_cartoes(db: Session = Depends(get_db)):
-    try:
-        cartoes = db.query(Cartao).all()
+    cartoes = db.query(Cartao).all()
+    if not cartoes:
+        return []
 
-        fuso = pytz.timezone("America/Sao_Paulo")
-        hoje = datetime.now(fuso)
+    hoje = datetime.now(pytz.timezone("America/Sao_Paulo"))
+    ids_cartoes = [cartao.id for cartao in cartoes]
+    gastos = db.query(GastoDiario).filter(
+        GastoDiario.cartao_id.in_(ids_cartoes),
+        GastoDiario.tipo_pagamento == "credito",
+        GastoDiario.pago.is_(False),
+    ).all()
+    gastos_por_cartao = {cartao.id: [] for cartao in cartoes}
+    for gasto in gastos:
+        gastos_por_cartao[gasto.cartao_id].append(gasto)
 
-        if not cartoes:
-            return []
-
-        # Busca TODOS os gastos de crédito não pagos de todos os cartões em UMA ÚNICA query
-        # (elimina o N+1: antes era 1 query por cartão)
-        ids_cartoes = [c.id for c in cartoes]
-        todos_gastos = db.query(GastoDiario).filter(
-            GastoDiario.cartao_id.in_(ids_cartoes),
-            GastoDiario.tipo_pagamento == 'credito',
-            GastoDiario.pago == False
-        ).all()
-
-        # Agrupa os gastos por cartao_id em memória
-        gastos_por_cartao: dict[int, list] = {c.id: [] for c in cartoes}
-        for g in todos_gastos:
-            gastos_por_cartao[g.cartao_id].append(g)
-
-        resultado = []
-        for c in cartoes:
-            cartao_dict = {
-                col.name: getattr(c, col.name)
-                for col in c.__table__.columns
-            }
-            dia_fechamento = c.data_fatura if c.data_fatura else 15
-            cartao_dict['fatura_atual'] = _calcular_fatura_do_mes(
-                gastos_por_cartao[c.id],
-                dia_fechamento,
-                hoje.month,
-                hoje.year,
-            )
-            resultado.append(cartao_dict)
-
-        return resultado
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Erro ao listar cartoes: {str(e)}')
+    resultado = []
+    for cartao in cartoes:
+        dados = {
+            coluna.name: getattr(cartao, coluna.name)
+            for coluna in cartao.__table__.columns
+        }
+        dados["fatura_atual"] = _calcular_fatura_do_mes(
+            gastos_por_cartao[cartao.id],
+            cartao.data_fatura,
+            hoje.month,
+            hoje.year,
+        )
+        resultado.append(dados)
+    return resultado
 
 
-@router.get('/{id}')
+@router.get("/{id}")
 def buscar_cartao(id: int, db: Session = Depends(get_db)):
-    try:
-        db_cartao = db.query(Cartao).filter(Cartao.id == id).first()
-        if not db_cartao:
-            raise HTTPException(status_code=404, detail='Cartão não encontrado')
-        return db_cartao
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Erro ao buscar cartao: {str(e)}')
+    cartao = db.query(Cartao).filter(Cartao.id == id).first()
+    if not cartao:
+        raise HTTPException(status_code=404, detail="Cartao nao encontrado")
+    return cartao
 
 
-@router.put('/{id}')
-def atualizar_cartao(id: int, cartao_in: CartaoBase, db: Session = Depends(get_db)):
-    try:
-        db_cartao = db.query(Cartao).filter(Cartao.id == id).first()
-        if not db_cartao:
-            raise HTTPException(status_code=404, detail='Cartão não encontrado')
-
-        db_cartao.nome = cartao_in.nome
-        db_cartao.limite = cartao_in.limite
-        db_cartao.saldo = cartao_in.saldo
-        db_cartao.data_fatura = cartao_in.data_fatura
-        db_cartao.dia_vencimento = cartao_in.dia_vencimento
-        db_cartao.fatura_atual = cartao_in.fatura_atual
-
-        db.commit()
-        db.refresh(db_cartao)
-        return db_cartao
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f'Erro ao atualizar cartao: {str(e)}')
-
-
-@router.delete('/{id}')
-def deletar_cartao(id: int, db: Session = Depends(get_db)):
-    try:
-        db_cartao = db.query(Cartao).filter(Cartao.id == id).first()
-        if not db_cartao:
-            raise HTTPException(status_code=404, detail='Cartão não encontrado')
-
-        db.delete(db_cartao)
-        db.commit()
-        return {'mensagem': 'Cartão deletado com sucesso'}
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f'Erro ao deletar cartao: {str(e)}')
-
-
-@router.post('/{id}/pagar_fatura')
-def pagar_fatura(id: int, db: Session = Depends(get_db)):
+@router.put("/{id}")
+def atualizar_cartao(
+    id: int, cartao_in: CartaoBase, db: Session = Depends(get_db)
+):
     try:
         cartao = db.query(Cartao).filter(Cartao.id == id).first()
         if not cartao:
-            raise HTTPException(status_code=404, detail='Cartão não encontrado')
+            raise HTTPException(status_code=404, detail="Cartao nao encontrado")
+        for campo, valor in cartao_in.model_dump().items():
+            setattr(cartao, campo, valor)
+        db.commit()
+        db.refresh(cartao)
+        return cartao
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Erro ao atualizar cartao")
 
-        fuso = pytz.timezone("America/Sao_Paulo")
-        hoje = datetime.now(fuso)
 
+@router.delete("/{id}")
+def deletar_cartao(id: int, db: Session = Depends(get_db)):
+    try:
+        cartao = db.query(Cartao).filter(Cartao.id == id).first()
+        if not cartao:
+            raise HTTPException(status_code=404, detail="Cartao nao encontrado")
+        if cartao.gastos or cartao.receitas:
+            raise HTTPException(
+                status_code=409,
+                detail="Cartao com movimentacoes nao pode ser excluido",
+            )
+        db.delete(cartao)
+        db.commit()
+        return {"mensagem": "Cartao deletado com sucesso"}
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Erro ao deletar cartao")
+
+
+@router.post("/{id}/pagar_fatura")
+def pagar_fatura(id: int, db: Session = Depends(get_db)):
+    try:
+        cartao = (
+            db.query(Cartao)
+            .filter(Cartao.id == id)
+            .with_for_update()
+            .first()
+        )
+        if not cartao:
+            raise HTTPException(status_code=404, detail="Cartao nao encontrado")
+
+        hoje = datetime.now(pytz.timezone("America/Sao_Paulo"))
         gastos = db.query(GastoDiario).filter(
             GastoDiario.cartao_id == cartao.id,
-            GastoDiario.tipo_pagamento.ilike('credito'),
-            GastoDiario.pago == False
-        ).all()
+            GastoDiario.tipo_pagamento == "credito",
+            GastoDiario.pago.is_(False),
+        ).with_for_update().all()
+        gastos_da_fatura = [
+            gasto for gasto in gastos
+            if _pertence_a_fatura(
+                gasto, cartao.data_fatura, hoje.month, hoje.year
+            )
+        ]
+        valor_fatura = sum(
+            (gasto.valor for gasto in gastos_da_fatura), Decimal("0")
+        )
+        if valor_fatura <= 0:
+            raise HTTPException(status_code=409, detail="Nao ha fatura em aberto")
+        if cartao.saldo < valor_fatura:
+            raise HTTPException(status_code=409, detail="Saldo insuficiente")
 
-        dia_fechamento = cartao.data_fatura if cartao.data_fatura else 15
-
-        # Identifica os gastos que pertencem à fatura do mês atual
-        gastos_para_pagar = []
-        for g in gastos:
-            d = g.data
-            mes_fatura = d.month - 1
-            ano_fatura = d.year
-
-            if d.day > dia_fechamento:
-                mes_fatura += 1
-                if mes_fatura > 11:
-                    mes_fatura = 0
-                    ano_fatura += 1
-
-            if mes_fatura == (hoje.month - 1) and ano_fatura == hoje.year:
-                gastos_para_pagar.append(g)
-
-        valor_fatura = round(sum(g.valor for g in gastos_para_pagar), 2)
-
-        # 1. Abate do saldo a fatura total calculada
         cartao.saldo -= valor_fatura
-        # 2. Devolve o limite para o cartão
         cartao.limite += valor_fatura
-        # 3. Marca esses gastos específicos como PAGOS
-        for gp in gastos_para_pagar:
-            gp.pago = True
-
-        cartao.fatura_atual = 0
+        cartao.fatura_atual = Decimal("0")
+        for gasto in gastos_da_fatura:
+            gasto.pago = True
 
         db.commit()
         db.refresh(cartao)
-
         return {
-            "mensagem": "Fatura paga com sucesso!",
+            "mensagem": "Fatura paga com sucesso",
             "valor_pago": valor_fatura,
-            "novo_saldo": round(cartao.saldo, 2),
-            "novo_limite": round(cartao.limite, 2)
+            "novo_saldo": cartao.saldo,
+            "novo_limite": cartao.limite,
         }
     except HTTPException:
-        raise
-    except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f'Erro ao pagar fatura: {str(e)}')
+        raise
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Erro ao pagar fatura")

@@ -1,16 +1,19 @@
-from database import Base
-from sqlalchemy import Column, Integer, String, Float
+from sqlalchemy import Column, Integer, Numeric, String
 from sqlalchemy.orm import relationship
 
+from database import Base
+
+
 class Cartao(Base):
-    __tablename__ = 'cartoes'
+    __tablename__ = "cartoes"
+
     id = Column(Integer, primary_key=True, index=True)
-    nome = Column(String)
-    dono = Column(String, default="Eu") # Quem é o dono da conta (Ex: Eu, Vô)
-    limite = Column(Float)
-    saldo = Column(Float)
-    data_fatura = Column(Integer)
-    dia_vencimento = Column(Integer)
-    fatura_atual = Column(Float)
-    gastos = relationship("GastoDiario", back_populates="cartao")
-    receitas = relationship("Receita", back_populates="cartao")
+    nome = Column(String, nullable=False)
+    dono = Column(String, nullable=False, default="Eu")
+    limite = Column(Numeric(12, 2), nullable=False, default=0)
+    saldo = Column(Numeric(12, 2), nullable=False, default=0)
+    data_fatura = Column(Integer, nullable=False)
+    dia_vencimento = Column(Integer, nullable=False)
+    fatura_atual = Column(Numeric(12, 2), nullable=False, default=0)
+    gastos = relationship("GastoDiario", back_populates="cartao", passive_deletes=True)
+    receitas = relationship("Receita", back_populates="cartao", passive_deletes=True)

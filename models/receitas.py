@@ -1,16 +1,22 @@
-from database import Base
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Float
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import relationship
 
+from database import Base
+
+
 class Receita(Base):
-    __tablename__ = 'receitas'
-    
+    __tablename__ = "receitas"
+
     id = Column(Integer, primary_key=True, index=True)
-    descricao = Column(String, index=True)
-    valor = Column(Float)
-    data = Column(DateTime)
-    categoria_id = Column(Integer, ForeignKey('categorias.id'), nullable=True) # Pode ser nulo
-    cartao_id = Column(Integer, ForeignKey('cartoes.id')) # Conta/Cartão onde o dinheiro entrou
-    
+    descricao = Column(String, nullable=False, index=True)
+    valor = Column(Numeric(12, 2), nullable=False)
+    data = Column(DateTime, nullable=False)
+    categoria_id = Column(
+        Integer, ForeignKey("categorias.id"), nullable=True
+    )
+    cartao_id = Column(
+        Integer, ForeignKey("cartoes.id", ondelete="RESTRICT"), nullable=False
+    )
+
     categoria = relationship("Categoria")
     cartao = relationship("Cartao", back_populates="receitas")

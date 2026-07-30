@@ -21,7 +21,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from database import DATABASE_URL, Base
-from models import Categoria, Cartao, GastoDiario # Garante que as classes sejam lidas
+from models import Categoria, Cartao, GastoDiario, Receita  # noqa: F401
 
 # Sobrescreve a URL do alembic.ini com a nossa URL que puxa do .env
 config.set_main_option("sqlalchemy.url", DATABASE_URL)

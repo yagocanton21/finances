@@ -9,7 +9,7 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
-    
+
     services:
       postgres:
         image: postgres:15
@@ -32,37 +32,50 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install httpx pytest
 
-      - name: Run Tests
+      - name: Apply Test Database Migrations
         env:
           POSTGRES_USER: user
           POSTGRES_PASSWORD: password
           POSTGRES_DB: financas_test
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
+        run: alembic upgrade head
+
+      - name: Run Backend Tests
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: financas_test
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+        run: python -m unittest discover -s tests -v
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build and Lint Frontend
+        working-directory: frontend
         run: |
-          # Start the API in the background
-          uvicorn main:app --host 0.0.0.0 --port 8000 &
-          sleep 5 # Wait for API to start
-          
-          # Run database migrations
-          alembic upgrade head
-          
-          # Run the test script
-          python scratch/test_api.py || echo "Warning: Tests might need adjustment for CI. Continuing."
+          npm ci
+          npm run build
+          npm run lint
 
   deploy:
     name: Deploy to VPS
     needs: test
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Execute SSH Commands
         uses: appleboy/ssh-action@master
@@ -72,37 +85,32 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             set -e
-            # Garante que a pasta existe
             mkdir -p /home/ubuntu/finan-as
             cd /home/ubuntu/finan-as
-            
-            # Força a VPS a inicializar o git caso nao seja, e espelha EXATAMENTE o github
+
             git init
             git remote add origin https://github.com/yagocanton21/finances.git || true
             git fetch origin
             git reset --hard origin/main
-            
-            docker compose build
-            docker compose up -d
-            
-            # Aguarda o banco de dados Postgres inicializar completamente antes de migrar
-            sleep 10
-            
-            docker compose exec -T api alembic upgrade head
+
+            docker compose up -d --build
+            docker compose ps
 
   alert_hermes_failure:
     name: Alert Hermes on Failure
     runs-on: ubuntu-latest
     if: failure()
     needs: [test, deploy]
+
     steps:
       - name: Send Webhook to Hermes
+        env:
+          HERMES_BOT_TOKEN: ${{ secrets.HERMES_BOT_TOKEN }}
+          HERMES_CHAT_ID: ${{ secrets.HERMES_CHAT_ID }}
         run: |
-          TOKEN="8810754356:AAGzLT5EJ2lzVER4owUwl4Tdy_aRX5uVPuk"
-          CHAT_ID="5118856718"
-          MESSAGE="🚨 *ALERTA DE DESASTRE:* O último código de Finanças quebrou o sistema! A esteira do GitHub Actions falhou. Por favor, acesse o painel ou a VPS3 via SSH e investigue o erro, Chefe!"
-          
-          curl -s -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
-            -d chat_id="${CHAT_ID}" \
-            -d text="${MESSAGE}" \
-            -d parse_mode="Markdown"
+          MESSAGE="ALERTA: o pipeline de Financas falhou. Verifique o GitHub Actions e a VPS."
+
+          curl --fail --silent --show-error \
+            -X POST "https://api.telegram.org/bot${HERMES_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${HERMES_CHAT_ID}" \
+            -d text="${MESSAGE}"
