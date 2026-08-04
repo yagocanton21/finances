@@ -12,7 +12,8 @@ os.environ.setdefault("POSTGRES_DB", "test")
 
 from routers.cartoes import _calcular_fatura_do_mes, _pertence_a_fatura
 from routers.gastos_diarios import _aplicar_gasto, _centavos
-from schemas.gastos_diarios import GastoDiarioBase, TipoPagamento
+from schemas.gastos_diarios import GastoDiarioBase, GastoDiarioPatch, TipoPagamento
+from schemas.cartoes import PagarFaturaIn
 from fastapi import HTTPException
 
 
@@ -92,6 +93,161 @@ class RegrasFinanceirasTest(unittest.TestCase):
             pago=True,
         )
         self.assertFalse(hasattr(gasto, "pago"))
+
+
+class CutoffFaturaTest(unittest.TestCase):
+    """Testa o fix 1: >= no cutoff (compra no dia do fechamento vai para fatura seguinte)."""
+
+    def test_compra_no_dia_do_fechamento_cai_na_fatura_seguinte(self):
+        """Compra no dia 28 com fechamento 28 => fatura do mês seguinte."""
+        gasto = SimpleNamespace(
+            data=datetime(2026, 7, 28), valor=Decimal("200.00")
+        )
+        # Com >=, dia 28 (fechamento=28) vai para agosto
+        self.assertFalse(_pertence_a_fatura(gasto, 28, 7, 2026))
+        self.assertTrue(_pertence_a_fatura(gasto, 28, 8, 2026))
+
+    def test_compra_antes_do_fechamento_fica_no_mes(self):
+        """Compra no dia 27 com fechamento 28 => fatura do mês atual."""
+        gasto = SimpleNamespace(
+            data=datetime(2026, 7, 27), valor=Decimal("100.00")
+        )
+        self.assertTrue(_pertence_a_fatura(gasto, 28, 7, 2026))
+        self.assertFalse(_pertence_a_fatura(gasto, 28, 8, 2026))
+
+    def test_compra_no_dia_1_com_fechamento_15(self):
+        """Compra no dia 1 com fechamento 15 => fatura do mês atual."""
+        gasto = SimpleNamespace(
+            data=datetime(2026, 8, 1), valor=Decimal("50.00")
+        )
+        self.assertTrue(_pertence_a_fatura(gasto, 15, 8, 2026))
+
+    def test_compra_no_dia_15_com_fechamento_15(self):
+        """Compra no dia 15 com fechamento 15 => fatura do mês seguinte (>=)."""
+        gasto = SimpleNamespace(
+            data=datetime(2026, 8, 15), valor=Decimal("75.00")
+        )
+        self.assertFalse(_pertence_a_fatura(gasto, 15, 8, 2026))
+        self.assertTrue(_pertence_a_fatura(gasto, 15, 9, 2026))
+
+    def test_fechamento_28_dezembro_avanca_para_janeiro(self):
+        """Compra dia 28/12 com fechamento 28 => fatura janeiro do ano seguinte."""
+        gasto = SimpleNamespace(
+            data=datetime(2026, 12, 28), valor=Decimal("300.00")
+        )
+        self.assertFalse(_pertence_a_fatura(gasto, 28, 12, 2026))
+        self.assertTrue(_pertence_a_fatura(gasto, 28, 1, 2027))
+
+    def test_calculo_fatura_com_gastos_mistos(self):
+        """Gastos antes e no dia do fechamento devem ser separados corretamente."""
+        gastos = [
+            SimpleNamespace(data=datetime(2026, 7, 27), valor=Decimal("100.00")),  # julho
+            SimpleNamespace(data=datetime(2026, 7, 28), valor=Decimal("200.00")),  # agosto (>=)
+            SimpleNamespace(data=datetime(2026, 7, 29), valor=Decimal("50.00")),   # agosto
+        ]
+        # Fatura de julho: só o gasto do dia 27
+        self.assertEqual(
+            _calcular_fatura_do_mes(gastos, 28, 7, 2026),
+            Decimal("100.00"),
+        )
+        # Fatura de agosto: gastos do dia 28 e 29
+        self.assertEqual(
+            _calcular_fatura_do_mes(gastos, 28, 8, 2026),
+            Decimal("250.00"),
+        )
+
+
+class PagarFaturaSchemaTest(unittest.TestCase):
+    """Testa o fix 2: schema PagarFaturaIn."""
+
+    def test_schema_aceita_vazio(self):
+        """Chamada sem parâmetros deve funcionar (retrocompatível)."""
+        pag = PagarFaturaIn()
+        self.assertIsNone(pag.valor)
+        self.assertIsNone(pag.mes_ref)
+        self.assertIsNone(pag.ano_ref)
+
+    def test_schema_aceita_todos_campos(self):
+        pag = PagarFaturaIn(
+            valor=Decimal("150.00"), mes_ref=6, ano_ref=2026
+        )
+        self.assertEqual(pag.valor, Decimal("150.00"))
+        self.assertEqual(pag.mes_ref, 6)
+        self.assertEqual(pag.ano_ref, 2026)
+
+    def test_schema_rejeita_valor_zero(self):
+        with self.assertRaises(ValidationError):
+            PagarFaturaIn(valor=Decimal("0"))
+
+    def test_schema_rejeita_valor_negativo(self):
+        with self.assertRaises(ValidationError):
+            PagarFaturaIn(valor=Decimal("-10.00"))
+
+    def test_schema_rejeita_mes_invalido(self):
+        with self.assertRaises(ValidationError):
+            PagarFaturaIn(mes_ref=13)
+
+    def test_schema_aceita_apenas_mes_ref(self):
+        """Pode informar só o mês sem o ano."""
+        pag = PagarFaturaIn(mes_ref=7)
+        self.assertEqual(pag.mes_ref, 7)
+        self.assertIsNone(pag.ano_ref)
+        self.assertIsNone(pag.valor)
+
+
+class GastoDiarioPatchSchemaTest(unittest.TestCase):
+    """Testa o fix 3: schema GastoDiarioPatch."""
+
+    def test_patch_aceita_vazio(self):
+        patch = GastoDiarioPatch()
+        self.assertIsNone(patch.descricao)
+        self.assertIsNone(patch.valor)
+        self.assertIsNone(patch.data)
+        self.assertIsNone(patch.categoria_id)
+
+    def test_patch_aceita_apenas_valor(self):
+        patch = GastoDiarioPatch(valor=Decimal("99.99"))
+        self.assertEqual(patch.valor, Decimal("99.99"))
+        self.assertIsNone(patch.descricao)
+
+    def test_patch_aceita_apenas_descricao(self):
+        patch = GastoDiarioPatch(descricao="Nova descricao")
+        self.assertEqual(patch.descricao, "Nova descricao")
+        self.assertIsNone(patch.valor)
+
+    def test_patch_aceita_apenas_data(self):
+        data = datetime(2026, 8, 15)
+        patch = GastoDiarioPatch(data=data)
+        self.assertEqual(patch.data, data)
+
+    def test_patch_aceita_todos_campos(self):
+        patch = GastoDiarioPatch(
+            descricao="Editado",
+            valor=Decimal("50.00"),
+            data=datetime(2026, 9, 1),
+            categoria_id=3,
+        )
+        self.assertEqual(patch.descricao, "Editado")
+        self.assertEqual(patch.valor, Decimal("50.00"))
+        self.assertEqual(patch.categoria_id, 3)
+
+    def test_patch_rejeita_valor_zero(self):
+        with self.assertRaises(ValidationError):
+            GastoDiarioPatch(valor=Decimal("0"))
+
+    def test_patch_rejeita_descricao_vazia(self):
+        with self.assertRaises(ValidationError):
+            GastoDiarioPatch(descricao="")
+
+    def test_patch_nao_aceita_cartao_id(self):
+        """GastoDiarioPatch não tem campo cartao_id — não deve alterar cartão."""
+        patch = GastoDiarioPatch(cartao_id=5)
+        self.assertFalse(hasattr(patch, "cartao_id") and patch.cartao_id == 5)
+
+    def test_patch_nao_aceita_parcelas(self):
+        """GastoDiarioPatch não tem campo parcelas — não deve alterar parcelas."""
+        patch = GastoDiarioPatch(parcelas=3)
+        self.assertFalse(hasattr(patch, "parcelas"))
 
 
 if __name__ == "__main__":

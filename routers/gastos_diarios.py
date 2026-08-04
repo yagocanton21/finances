@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Cartao, GastoDiario
 from schemas import GastoDiarioBase
-from schemas.gastos_diarios import TipoPagamento
+from schemas.gastos_diarios import GastoDiarioPatch, TipoPagamento
 
 router = APIRouter()
 CENTAVOS = Decimal("0.01")
@@ -183,6 +183,52 @@ def atualizar_gasto_diario(
     except Exception:
         db.rollback()
         raise HTTPException(status_code=500, detail="Erro ao atualizar gasto diario")
+
+
+@router.patch("/{id}")
+def editar_gasto_diario(
+    id: int, patch: GastoDiarioPatch, db: Session = Depends(get_db)
+):
+    try:
+        gasto = (
+            db.query(GastoDiario)
+            .filter(GastoDiario.id == id)
+            .with_for_update()
+            .first()
+        )
+        if not gasto:
+            raise HTTPException(status_code=404, detail="Gasto diario nao encontrado")
+        if gasto.pago:
+            raise HTTPException(
+                status_code=409,
+                detail="Gasto pago nao pode ser alterado; estorne a fatura primeiro",
+            )
+
+        cartao = _buscar_cartao_bloqueado(db, gasto.cartao_id)
+
+        # Se o valor mudou, estorna o antigo e aplica o novo
+        if patch.valor is not None and patch.valor != gasto.valor:
+            _estornar_gasto(cartao, gasto)
+            tipo = TipoPagamento(gasto.tipo_pagamento)
+            _aplicar_gasto(cartao, tipo, patch.valor)
+            gasto.valor = patch.valor
+
+        if patch.descricao is not None:
+            gasto.descricao = patch.descricao
+        if patch.data is not None:
+            gasto.data = patch.data
+        if patch.categoria_id is not None:
+            gasto.categoria_id = patch.categoria_id
+
+        db.commit()
+        db.refresh(gasto)
+        return gasto
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Erro ao editar gasto diario")
 
 
 @router.delete("/{id}")

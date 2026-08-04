@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -27,3 +28,11 @@ class CartaoInDb(CartaoBase):
     id: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PagarFaturaIn(BaseModel):
+    valor: Optional[Decimal] = Field(
+        default=None, gt=0, max_digits=12, decimal_places=2
+    )
+    mes_ref: Optional[int] = Field(default=None, ge=1, le=12)
+    ano_ref: Optional[int] = Field(default=None, ge=1900, le=2200)

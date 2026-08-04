@@ -36,6 +36,13 @@ class GastoDiarioUpdate(GastoDiarioBase):
     pass
 
 
+class GastoDiarioPatch(BaseModel):
+    descricao: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    valor: Optional[Decimal] = Field(default=None, gt=0, max_digits=12, decimal_places=2)
+    data: Optional[datetime] = None
+    categoria_id: Optional[int] = None
+
+
 class GastoDiarioInDb(GastoDiarioBase):
     id: int
     pago: bool

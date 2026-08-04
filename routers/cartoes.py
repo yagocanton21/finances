@@ -1,13 +1,15 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import Optional
 
 import pytz
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Cartao, GastoDiario
 from schemas import CartaoBase
+from schemas.cartoes import PagarFaturaIn
 
 router = APIRouter()
 
@@ -18,7 +20,7 @@ def _pertence_a_fatura(
     data = gasto.data
     mes_fatura = data.month
     ano_fatura = data.year
-    if data.day > dia_fechamento:
+    if data.day >= dia_fechamento:
         mes_fatura += 1
         if mes_fatura > 12:
             mes_fatura = 1
@@ -135,7 +137,11 @@ def deletar_cartao(id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{id}/pagar_fatura")
-def pagar_fatura(id: int, db: Session = Depends(get_db)):
+def pagar_fatura(
+    id: int,
+    pagamento: Optional[PagarFaturaIn] = Body(default=None),
+    db: Session = Depends(get_db),
+):
     try:
         cartao = (
             db.query(Cartao)
@@ -147,6 +153,9 @@ def pagar_fatura(id: int, db: Session = Depends(get_db)):
             raise HTTPException(status_code=404, detail="Cartao nao encontrado")
 
         hoje = datetime.now(pytz.timezone("America/Sao_Paulo"))
+        mes_ref = pagamento.mes_ref if pagamento and pagamento.mes_ref else hoje.month
+        ano_ref = pagamento.ano_ref if pagamento and pagamento.ano_ref else hoje.year
+
         gastos = db.query(GastoDiario).filter(
             GastoDiario.cartao_id == cartao.id,
             GastoDiario.tipo_pagamento == "credito",
@@ -155,28 +164,43 @@ def pagar_fatura(id: int, db: Session = Depends(get_db)):
         gastos_da_fatura = [
             gasto for gasto in gastos
             if _pertence_a_fatura(
-                gasto, cartao.data_fatura, hoje.month, hoje.year
+                gasto, cartao.data_fatura, mes_ref, ano_ref
             )
         ]
-        valor_fatura = sum(
+        soma_fatura = sum(
             (gasto.valor for gasto in gastos_da_fatura), Decimal("0")
         )
-        if valor_fatura <= 0:
+        if soma_fatura <= 0:
             raise HTTPException(status_code=409, detail="Nao ha fatura em aberto")
+
+        valor_fatura = soma_fatura
+        if pagamento and pagamento.valor is not None:
+            if pagamento.valor > soma_fatura:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Valor informado ({pagamento.valor}) excede a fatura ({soma_fatura})",
+                )
+            valor_fatura = pagamento.valor
+
         if cartao.saldo < valor_fatura:
             raise HTTPException(status_code=409, detail="Saldo insuficiente")
 
         cartao.saldo -= valor_fatura
         cartao.limite += valor_fatura
         cartao.fatura_atual = Decimal("0")
-        for gasto in gastos_da_fatura:
-            gasto.pago = True
+
+        # Marca gastos como pagos (somente se pagou o total)
+        if valor_fatura == soma_fatura:
+            for gasto in gastos_da_fatura:
+                gasto.pago = True
 
         db.commit()
         db.refresh(cartao)
         return {
             "mensagem": "Fatura paga com sucesso",
             "valor_pago": valor_fatura,
+            "mes_ref": mes_ref,
+            "ano_ref": ano_ref,
             "novo_saldo": cartao.saldo,
             "novo_limite": cartao.limite,
         }
