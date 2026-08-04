@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Numeric, String
+from sqlalchemy import Boolean, Column, Integer, Numeric, String
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -15,5 +15,7 @@ class Cartao(Base):
     data_fatura = Column(Integer, nullable=False)
     dia_vencimento = Column(Integer, nullable=False)
     fatura_atual = Column(Numeric(12, 2), nullable=False, default=0)
+    ativo = Column(Boolean, nullable=False, default=True, server_default="true")
     gastos = relationship("GastoDiario", back_populates="cartao", passive_deletes=True)
     receitas = relationship("Receita", back_populates="cartao", passive_deletes=True)
+

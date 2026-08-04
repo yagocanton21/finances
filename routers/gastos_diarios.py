@@ -74,8 +74,8 @@ def criar_gasto_diario(
         compra_id = str(uuid4())
         valor_parcela = _centavos(gasto_in.valor / gasto_in.parcelas)
         valor_ultima = gasto_in.valor - valor_parcela * (gasto_in.parcelas - 1)
-        primeiro_gasto = None
-
+        
+        novos_gastos = []
         for indice in range(gasto_in.parcelas):
             numero = indice + 1
             gasto = GastoDiario(
@@ -90,13 +90,15 @@ def criar_gasto_diario(
                 cartao_id=gasto_in.cartao_id,
                 pago=False,
             )
-            db.add(gasto)
-            if primeiro_gasto is None:
-                primeiro_gasto = gasto
+            novos_gastos.append(gasto)
 
+        db.add_all(novos_gastos)
         db.commit()
-        db.refresh(primeiro_gasto)
-        return primeiro_gasto
+        # db.refresh n funciona numa lista de uma vez, mas não precisamos pois os IDs não são lidos aqui.
+        # Vamos retornar o primeiro gasto pegando do DB ou usando os obj criados
+        # É melhor fazer o db.refresh(novos_gastos[0])
+        db.refresh(novos_gastos[0])
+        return novos_gastos[0]
     except HTTPException:
         db.rollback()
         raise
@@ -121,9 +123,16 @@ def listar_gastos_diarios(
         query = query.filter(extract("year", GastoDiario.data) == ano)
     if compra_id is not None:
         query = query.filter(GastoDiario.compra_id == compra_id)
-    return query.order_by(GastoDiario.data.desc(), GastoDiario.id.desc()).offset(
-        offset
-    ).limit(limit).all()
+        
+    total = query.count()
+    items = query.order_by(GastoDiario.data.desc(), GastoDiario.id.desc()).offset(offset).limit(limit).all()
+    
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": items
+    }
 
 
 @router.get("/{id}")

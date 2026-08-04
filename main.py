@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from database import engine
-from routers import cartoes, categorias, gastos_diarios, receitas
+from routers import cartoes, categorias, gastos_diarios, receitas, relatorios
 
 app = FastAPI(title="API de Financas")
 
@@ -45,3 +45,4 @@ app.include_router(
     gastos_diarios.router, prefix="/gastos_diarios", tags=["gastos diarios"]
 )
 app.include_router(receitas.router, prefix="/receitas", tags=["receitas"])
+app.include_router(relatorios.router, prefix="/relatorios", tags=["relatorios"])

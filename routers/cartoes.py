@@ -54,7 +54,7 @@ def criar_cartao(cartao_in: CartaoBase, db: Session = Depends(get_db)):
 
 @router.get("/")
 def listar_cartoes(db: Session = Depends(get_db)):
-    cartoes = db.query(Cartao).all()
+    cartoes = db.query(Cartao).filter(Cartao.ativo == True).all()
     if not cartoes:
         return []
 
@@ -87,7 +87,7 @@ def listar_cartoes(db: Session = Depends(get_db)):
 
 @router.get("/{id}")
 def buscar_cartao(id: int, db: Session = Depends(get_db)):
-    cartao = db.query(Cartao).filter(Cartao.id == id).first()
+    cartao = db.query(Cartao).filter(Cartao.id == id, Cartao.ativo == True).first()
     if not cartao:
         raise HTTPException(status_code=404, detail="Cartao nao encontrado")
     return cartao
@@ -98,7 +98,7 @@ def atualizar_cartao(
     id: int, cartao_in: CartaoBase, db: Session = Depends(get_db)
 ):
     try:
-        cartao = db.query(Cartao).filter(Cartao.id == id).first()
+        cartao = db.query(Cartao).filter(Cartao.id == id, Cartao.ativo == True).first()
         if not cartao:
             raise HTTPException(status_code=404, detail="Cartao nao encontrado")
         for campo, valor in cartao_in.model_dump().items():
@@ -120,12 +120,8 @@ def deletar_cartao(id: int, db: Session = Depends(get_db)):
         cartao = db.query(Cartao).filter(Cartao.id == id).first()
         if not cartao:
             raise HTTPException(status_code=404, detail="Cartao nao encontrado")
-        if cartao.gastos or cartao.receitas:
-            raise HTTPException(
-                status_code=409,
-                detail="Cartao com movimentacoes nao pode ser excluido",
-            )
-        db.delete(cartao)
+        
+        cartao.ativo = False
         db.commit()
         return {"mensagem": "Cartao deletado com sucesso"}
     except HTTPException:

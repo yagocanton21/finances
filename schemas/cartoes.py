@@ -14,6 +14,7 @@ class CartaoBase(BaseModel):
     fatura_atual: Decimal = Field(
         default=Decimal("0"), ge=0, max_digits=12, decimal_places=2
     )
+    ativo: bool = Field(default=True)
 
 
 class CartaoCreate(CartaoBase):
