@@ -15,6 +15,12 @@ interface Gasto {
   numero_parcela?: number;
   origem?: string;
   external_id?: string | null;
+  categoria_id?: number | null;
+}
+
+interface Categoria {
+  id: number;
+  nome: string;
 }
 
 interface Cartao {
@@ -28,6 +34,7 @@ interface GastosListProps {
   apiUrl: string;
   activeProfile: string;
   viewMode: 'diarios' | 'parcelas';
+  categorias: Categoria[];
 }
 
 interface PaginatedResponse<T> {
@@ -62,7 +69,7 @@ const getTipoBadge = (tipo: string) => {
   }
 }
 
-export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosListProps) {
+export default function GastosList({ apiUrl, activeProfile, viewMode, categorias }: GastosListProps) {
   const [gastos, setGastos] = useState<Gasto[]>([])
   const [cartoes, setCartoes] = useState<Cartao[]>([])
   const [loading, setLoading] = useState(true)
@@ -165,6 +172,16 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
       }, 0),
     [gastos, cartaoIds, cartoesDoPerfil, mesAtual, anoAtual]
   )
+
+  const gastosPorCategoria = useMemo(() => {
+    const nomes = new Map(categorias.map(c => [c.id, c.nome]))
+    const totais = new Map<string, number>()
+    for (const gasto of gastosFiltrados) {
+      const nome = gasto.categoria_id ? (nomes.get(gasto.categoria_id) || 'Sem categoria') : 'Sem categoria'
+      totais.set(nome, (totais.get(nome) || 0) + gasto.valor)
+    }
+    return Array.from(totais.entries()).sort((a, b) => b[1] - a[1])
+  }, [categorias, gastosFiltrados])
 
   const gastosPorDia = useMemo(() => {
     const agrupado: Record<string, Gasto[]> = {}
@@ -332,6 +349,12 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
             Compras de crédito atribuídas a esta fatura
           </span>
         </div>
+        <div className="glass-panel summary-box hover-lift transition-all" style={{ marginBottom: '1.5rem' }}>
+          <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Gastos por categoria</span>
+          {gastosPorCategoria.length === 0 ? <span style={{ color: 'var(--text-secondary)' }}>Nenhum gasto no mês</span> : gastosPorCategoria.slice(0, 4).map(([nome, total]) => (
+            <div key={nome} className="flex-between"><span>{nome}</span><strong>{formatMoney(total)}</strong></div>
+          ))}
+        </div>
       </div>
 
       {/* Lista de Gastos */}
@@ -366,6 +389,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
                             {badge.label}
                           </span>
                           <span className="gasto-cartao">{cartaoNomes[gasto.cartao_id] || 'Cartão'}</span>
+                          {gasto.categoria_id && <span className="gasto-cartao">{categorias.find(c => c.id === gasto.categoria_id)?.nome || 'Categoria'}</span>}
                         </div>
                       </div>
                       <div className="gasto-right">

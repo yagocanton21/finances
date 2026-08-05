@@ -14,6 +14,16 @@ interface Cartao {
   fatura_atual: number;
 }
 
+interface Categoria {
+  id: number;
+  nome: string;
+}
+
+interface ResumoMensal {
+  guardado: number;
+  categorias: { nome: string; total: number }[];
+}
+
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 // Formatter criado uma única vez no nível de módulo (evita recriação a cada render)
@@ -23,19 +33,26 @@ const formatMoney = (value: number) => moneyFormatter.format(value);
 function App() {
   const [activeProfile, setActiveProfile] = useState<'Eu' | 'Vô'>('Eu')
   const [cartoes, setCartoes] = useState<Cartao[]>([])
+  const [categorias, setCategorias] = useState<Categoria[]>([])
+  const [resumoMensal, setResumoMensal] = useState<ResumoMensal | null>(null)
   const [loading, setLoading] = useState(true)
 
   // Modal States
   const [isCartaoModalOpen, setIsCartaoModalOpen] = useState(false)
   const [isReceitaModalOpen, setIsReceitaModalOpen] = useState(false)
   const [isGastoModalOpen, setIsGastoModalOpen] = useState(false)
+  const [isAporteModalOpen, setIsAporteModalOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'dashboard' | 'gastos' | 'parcelas'>('dashboard')
 
   // Recalcular faturas dinamicamente
   const fetchDados = async () => {
     try {
-      const cartoesData = await apiRequest<Cartao[]>(`${API_URL}/cartoes/`)
+      const [cartoesData, categoriasData] = await Promise.all([
+        apiRequest<Cartao[]>(`${API_URL}/cartoes/`),
+        apiRequest<Categoria[]>(`${API_URL}/categorias/`),
+      ])
       setCartoes(cartoesData)
+      setCategorias(categoriasData)
     } catch (error) {
       console.error("Erro ao buscar dados:", error)
     } finally {
@@ -43,9 +60,21 @@ function App() {
     }
   }
 
+  const fetchResumo = async () => {
+    const agora = new Date()
+    const resumo = await apiRequest<ResumoMensal>(
+      `${API_URL}/relatorios/resumo_mensal?mes=${agora.getMonth() + 1}&ano=${agora.getFullYear()}&dono=${encodeURIComponent(activeProfile)}`
+    )
+    setResumoMensal(resumo)
+  }
+
   useEffect(() => {
     fetchDados()
   }, [])
+
+  useEffect(() => {
+    fetchResumo().catch(error => console.error('Erro ao buscar resumo mensal:', error))
+  }, [activeProfile])
 
   // Filtragem e Cálculos
   const cartoesFiltrados = cartoes.filter(c => c.dono === activeProfile)
@@ -91,6 +120,7 @@ function App() {
       descricao: formData.get('descricao'),
       valor: parseMoney(formData.get('valor')),
       data: formData.get('data'),
+      categoria_id: formData.get('categoria_id') ? Number(formData.get('categoria_id')) : null,
       cartao_id: Number(formData.get('cartao_id'))
     }
     try {
@@ -101,6 +131,7 @@ function App() {
       })
       setIsReceitaModalOpen(false)
       await fetchDados()
+      await fetchResumo()
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Erro ao criar receita')
     }
@@ -115,6 +146,7 @@ function App() {
       data: formData.get('data'),
       tipo_pagamento: formData.get('tipo_pagamento'),
       parcelas: Number(formData.get('parcelas')),
+      categoria_id: formData.get('categoria_id') ? Number(formData.get('categoria_id')) : null,
       cartao_id: Number(formData.get('cartao_id'))
     }
     try {
@@ -125,6 +157,7 @@ function App() {
       })
       setIsGastoModalOpen(false)
       await fetchDados()
+      await fetchResumo()
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Erro ao criar gasto')
     }
@@ -137,6 +170,29 @@ function App() {
       await fetchDados()
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Erro ao pagar fatura')
+    }
+  }
+
+  const handleCriarAporte = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const formData = new FormData(e.currentTarget)
+    const payload = {
+      descricao: formData.get('descricao'),
+      valor: parseMoney(formData.get('valor')),
+      data: formData.get('data'),
+      cartao_id: Number(formData.get('cartao_id')),
+    }
+    try {
+      await apiRequest(`${API_URL}/aportes_reserva/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      setIsAporteModalOpen(false)
+      await fetchDados()
+      await fetchResumo()
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Erro ao guardar valor')
     }
   }
 
@@ -185,6 +241,7 @@ function App() {
             <div className="action-bar">
               <button className="btn btn-primary" onClick={() => setIsReceitaModalOpen(true)}>+ Nova Receita</button>
               <button className="btn transition-all" style={{ background: 'var(--danger)', color: 'white' }} onClick={() => setIsGastoModalOpen(true)}>- Novo Gasto</button>
+              <button className="btn transition-all" style={{ background: 'var(--success)', color: 'white' }} onClick={() => setIsAporteModalOpen(true)}>+ Guardar Dinheiro</button>
               <button className="btn transition-all" style={{ background: 'var(--bg-surface-hover)', color: 'white' }} onClick={() => setIsCartaoModalOpen(true)}>Adicionar Conta/Cartão</button>
             </div>
 
@@ -200,6 +257,22 @@ function App() {
                 <span className="summary-value" style={{ color: 'var(--danger)' }}>{formatMoney(faturaTotal)}</span>
               </div>
             </div>
+
+            {resumoMensal && (
+              <div className="dashboard-grid">
+                <div className="glass-panel summary-box hover-lift transition-all">
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Guardado no mês</span>
+                  <span className="summary-value" style={{ color: 'var(--success)' }}>{formatMoney(resumoMensal.guardado)}</span>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Valor separado para sua reserva</span>
+                </div>
+                <div className="glass-panel summary-box hover-lift transition-all">
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Maiores categorias</span>
+                  {resumoMensal.categorias.length === 0 ? <span style={{ color: 'var(--text-secondary)' }}>Nenhum gasto categorizado</span> : resumoMensal.categorias.slice(0, 3).map(item => (
+                    <div key={item.nome} className="flex-between"><span>{item.nome}</span><strong>{formatMoney(item.total)}</strong></div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Lista de Cartões */}
             <h2 style={{ marginBottom: '1.5rem' }}>Minhas Contas e Cartões</h2>
@@ -249,7 +322,7 @@ function App() {
             )}
           </>
         ) : (
-          <GastosList apiUrl={API_URL} activeProfile={activeProfile} viewMode={activeTab === 'gastos' ? 'diarios' : 'parcelas'} />
+          <GastosList apiUrl={API_URL} activeProfile={activeProfile} categorias={categorias} viewMode={activeTab === 'gastos' ? 'diarios' : 'parcelas'} />
         )}
       </main>
 
@@ -292,6 +365,13 @@ function App() {
               {cartoesFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
             </select>
           </div>
+          <div className="form-group">
+            <label>Categoria</label>
+            <select name="categoria_id" className="form-select">
+              <option value="">Sem categoria</option>
+              {categorias.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          </div>
           <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '1rem' }}>Salvar Receita</button>
         </form>
       </Modal>
@@ -330,7 +410,39 @@ function App() {
               {cartoesFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
             </select>
           </div>
+          <div className="form-group">
+            <label>Categoria</label>
+            <select name="categoria_id" className="form-select">
+              <option value="">Sem categoria</option>
+              {categorias.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          </div>
           <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '1rem', background: 'var(--danger)' }}>Registrar Gasto</button>
+        </form>
+      </Modal>
+
+      <Modal isOpen={isAporteModalOpen} onClose={() => setIsAporteModalOpen(false)} title="Guardar Dinheiro">
+        <form onSubmit={handleCriarAporte}>
+          <div className="form-group">
+            <label>Descrição</label>
+            <input name="descricao" type="text" className="form-input" defaultValue="Reserva mensal" required />
+          </div>
+          <div className="form-group">
+            <label>Valor guardado (R$)</label>
+            <input name="valor" type="number" min="0.01" step="0.01" className="form-input" required />
+          </div>
+          <div className="form-group">
+            <label>Data</label>
+            <input name="data" type="date" className="form-input" defaultValue={new Date().toISOString().split('T')[0]} required />
+          </div>
+          <div className="form-group">
+            <label>Retirar de qual conta?</label>
+            <select name="cartao_id" className="form-select" required>
+              <option value="">Selecione a conta...</option>
+              {cartoesFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          </div>
+          <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '1rem', background: 'var(--success)' }}>Guardar valor</button>
         </form>
       </Modal>
 

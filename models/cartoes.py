@@ -18,4 +18,4 @@ class Cartao(Base):
     ativo = Column(Boolean, nullable=False, default=True, server_default="true")
     gastos = relationship("GastoDiario", back_populates="cartao", passive_deletes=True)
     receitas = relationship("Receita", back_populates="cartao", passive_deletes=True)
-
+    aportes_reserva = relationship("AporteReserva", back_populates="cartao", passive_deletes=True)
