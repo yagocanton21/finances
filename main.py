@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from database import engine
-from routers import cartoes, categorias, gastos_diarios, receitas, relatorios
+from routers import agente, cartoes, categorias, gastos_diarios, receitas, relatorios
 
 app = FastAPI(title="API de Financas")
 
@@ -46,3 +46,4 @@ app.include_router(
 )
 app.include_router(receitas.router, prefix="/receitas", tags=["receitas"])
 app.include_router(relatorios.router, prefix="/relatorios", tags=["relatorios"])
+app.include_router(agente.router, prefix="/agent/v1", tags=["integracao Hermes"])

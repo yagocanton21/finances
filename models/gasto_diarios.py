@@ -20,6 +20,8 @@ class GastoDiario(Base):
         Integer, ForeignKey("cartoes.id", ondelete="RESTRICT"), nullable=False
     )
     pago = Column(Boolean, nullable=False, default=False, index=True)
+    origem = Column(String(30), nullable=False, default="frontend", index=True)
+    external_id = Column(String(120), nullable=True, index=True)
 
     categoria = relationship("Categoria", back_populates="gastos")
     cartao = relationship("Cartao", back_populates="gastos")

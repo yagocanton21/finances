@@ -17,6 +17,8 @@ class Receita(Base):
     cartao_id = Column(
         Integer, ForeignKey("cartoes.id", ondelete="RESTRICT"), nullable=False
     )
+    origem = Column(String(30), nullable=False, default="frontend", index=True)
+    external_id = Column(String(120), nullable=True, index=True)
 
     categoria = relationship("Categoria")
     cartao = relationship("Cartao", back_populates="receitas")

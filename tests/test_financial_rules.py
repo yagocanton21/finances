@@ -14,6 +14,7 @@ from routers.cartoes import _calcular_fatura_do_mes, _pertence_a_fatura
 from routers.gastos_diarios import _aplicar_gasto, _centavos
 from schemas.gastos_diarios import GastoDiarioBase, GastoDiarioPatch, TipoPagamento
 from schemas.cartoes import PagarFaturaIn
+from schemas.agente import LancamentoAgenteIn
 from fastapi import HTTPException
 
 
@@ -248,6 +249,43 @@ class GastoDiarioPatchSchemaTest(unittest.TestCase):
         """GastoDiarioPatch não tem campo parcelas — não deve alterar parcelas."""
         patch = GastoDiarioPatch(parcelas=3)
         self.assertFalse(hasattr(patch, "parcelas"))
+
+
+class LancamentoAgenteSchemaTest(unittest.TestCase):
+    def test_gasto_exige_forma_de_pagamento(self):
+        with self.assertRaises(ValidationError):
+            LancamentoAgenteIn(
+                tipo_lancamento="gasto",
+                descricao="Mercado",
+                valor="10.00",
+                data=datetime(2026, 8, 5),
+                conta_id=1,
+            )
+
+    def test_exige_uma_unica_forma_de_identificar_conta(self):
+        with self.assertRaises(ValidationError):
+            LancamentoAgenteIn(
+                tipo_lancamento="receita",
+                descricao="Salario",
+                valor="100.00",
+                data=datetime(2026, 8, 5),
+                conta_id=1,
+                conta="Nubank",
+            )
+
+    def test_aceita_compra_parcelada_estruturada(self):
+        entrada = LancamentoAgenteIn(
+            tipo_lancamento="gasto",
+            descricao="Geladeira",
+            valor="2400.00",
+            data=datetime(2026, 8, 5),
+            conta="Nubank",
+            tipo_pagamento="credito",
+            parcelas=12,
+            external_id="mensagem-123",
+        )
+        self.assertEqual(entrada.parcelas, 12)
+        self.assertEqual(entrada.external_id, "mensagem-123")
 
 
 if __name__ == "__main__":

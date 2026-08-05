@@ -13,6 +13,8 @@ interface Gasto {
   pago?: boolean;
   compra_id?: string | null;
   numero_parcela?: number;
+  origem?: string;
+  external_id?: string | null;
 }
 
 interface Cartao {
@@ -28,6 +30,13 @@ interface GastosListProps {
   viewMode: 'diarios' | 'parcelas';
 }
 
+interface PaginatedResponse<T> {
+  total: number;
+  limit: number;
+  offset: number;
+  items: T[];
+}
+
 // Formatter criado uma única vez no nível de módulo (evita recriação a cada render)
 const moneyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const formatMoney = (value: number) => moneyFormatter.format(value);
@@ -40,6 +49,9 @@ const formatDate = (dateStr: string) => {
 const PARCELA_TEST_REGEX = /(?:parcela\s*|\()\d+\/\d+\)?/i;
 const PARCELA_EXTRACT_REGEX = /^(.+?)(?:\s*-\s*Parcela\s*|\s*\()(\d+)\/(\d+)\)?\s*$/i;
 const PARCELA_NUM_REGEX = /(?:parcela\s*|\()(\d+)\//i;
+const isParcela = (gasto: Gasto) =>
+  gasto.tipo_pagamento.toLowerCase() === 'credito' &&
+  (Boolean(gasto.compra_id) || gasto.parcelas > 1 || PARCELA_TEST_REGEX.test(gasto.descricao));
 
 const getTipoBadge = (tipo: string) => {
   switch (tipo.toLowerCase()) {
@@ -71,13 +83,13 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
         const anoAnt = mesAtual === 0 ? anoAtual - 1 : anoAtual;
 
         const [gastosAtualData, gastosAntData, cartoesData] = await Promise.all([
-          apiRequest<Gasto[]>(`${apiUrl}/gastos_diarios/?mes=${mesAtual + 1}&ano=${anoAtual}`),
-          apiRequest<Gasto[]>(`${apiUrl}/gastos_diarios/?mes=${mesAnt}&ano=${anoAnt}`),
+          apiRequest<PaginatedResponse<Gasto>>(`${apiUrl}/gastos_diarios/?mes=${mesAtual + 1}&ano=${anoAtual}`),
+          apiRequest<PaginatedResponse<Gasto>>(`${apiUrl}/gastos_diarios/?mes=${mesAnt}&ano=${anoAnt}`),
           apiRequest<Cartao[]>(`${apiUrl}/cartoes/`)
         ])
 
         // Remove duplicatas se houver
-        const allGastos = [...gastosAtualData, ...gastosAntData];
+        const allGastos = [...gastosAtualData.items, ...gastosAntData.items];
         const uniqueGastos = Array.from(new Map(allGastos.map(g => [g.id, g])).values());
 
         setGastos(uniqueGastos)
@@ -112,9 +124,9 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
     gastos
       .filter(g => cartaoIds.has(g.cartao_id))
       .filter(g => {
-        const isParcela = g.tipo_pagamento.toLowerCase() === 'credito' && g.descricao.match(PARCELA_TEST_REGEX);
-        if (viewMode === 'diarios' && isParcela) return false;
-        if (viewMode === 'parcelas' && !isParcela) return false;
+        const parcela = isParcela(g);
+        if (viewMode === 'diarios' && parcela) return false;
+        if (viewMode === 'parcelas' && !parcela) return false;
         return true;
       })
       .filter(g => {
@@ -143,7 +155,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
 
         let mesFatura = d.getMonth()
         let anoFatura = d.getFullYear()
-        if (d.getDate() > diaFechamento) {
+        if (d.getDate() >= diaFechamento) {
           mesFatura += 1
           if (mesFatura > 11) {
             mesFatura = 0
@@ -253,15 +265,15 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
   }
 
   const handleClickGasto = async (gasto: Gasto) => {
-    if (gasto.tipo_pagamento.toLowerCase() === 'credito' && gasto.descricao.match(PARCELA_TEST_REGEX)) {
+    if (isParcela(gasto)) {
       setGastoSelecionado(gasto)
       setParcelasDetalhadas([])
       if (gasto.compra_id) {
         try {
-          const parcelas = await apiRequest<Gasto[]>(
+          const parcelas = await apiRequest<PaginatedResponse<Gasto>>(
             `${apiUrl}/gastos_diarios/?compra_id=${encodeURIComponent(gasto.compra_id)}&limit=120`
           )
-          setParcelasDetalhadas(parcelas)
+          setParcelasDetalhadas(parcelas.items)
         } catch (error) {
           console.error('Erro ao buscar parcelas:', error)
         }
@@ -316,25 +328,25 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
       <div className="dashboard-grid">
         <div className="glass-panel summary-box hover-lift transition-all" style={{ marginBottom: '1.5rem' }}>
           <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
-            Gastos Totais ({nomeMes})
+            {viewMode === 'diarios' ? 'Gastos à vista' : 'Parcelas do mês'} ({nomeMes})
           </span>
           <span className="summary-value" style={{ color: 'var(--text-primary)' }}>
             {formatMoney(totalMes)}
           </span>
           <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-            {gastosFiltrados.length} {gastosFiltrados.length === 1 ? 'lançamento' : 'lançamentos'} no mês civil
+            {gastosFiltrados.length} {gastosFiltrados.length === 1 ? 'lançamento' : 'lançamentos'} em {nomeMes}
           </span>
         </div>
 
         <div className="glass-panel summary-box hover-lift transition-all" style={{ marginBottom: '1.5rem', borderLeft: '4px solid var(--accent-primary)' }}>
           <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
-            Projeção de Faturas ({nomeMes})
+            Fatura prevista ({nomeMes})
           </span>
           <span className="summary-value" style={{ color: 'var(--danger)' }}>
             {formatMoney(projecaoFatura)}
           </span>
           <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-            Soma dos cartões de crédito para este vencimento
+            Compras de crédito atribuídas a esta fatura
           </span>
         </div>
       </div>
@@ -351,7 +363,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
             <div className="gastos-list">
               {gastosNoDia.map(gasto => {
                 const badge = getTipoBadge(gasto.tipo_pagamento)
-                const temParcela = gasto.tipo_pagamento.toLowerCase() === 'credito' && gasto.descricao.match(PARCELA_TEST_REGEX)
+                const temParcela = isParcela(gasto)
                 return (
                   <div
                     key={gasto.id}
@@ -364,6 +376,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
                           {gasto.descricao}
                           {temParcela && <span className="parcela-icon"> 📊</span>}
                           {(gasto as any).pago && <span className="badge" style={{ background: 'var(--success)', color: 'var(--bg)', marginLeft: '0.5rem', opacity: 0.9, padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem' }}>Pago</span>}
+                          {gasto.origem === 'hermes' && <span className="badge" style={{ marginLeft: '0.5rem' }}>Hermes</span>}
                         </span>
                         <div className="gasto-tags">
                           <span className="gasto-badge" style={{ background: badge.color, color: badge.text }}>
