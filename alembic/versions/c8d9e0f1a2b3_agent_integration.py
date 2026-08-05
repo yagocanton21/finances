@@ -1,7 +1,7 @@
 """agent integration and audit
 
 Revision ID: c8d9e0f1a2b3
-Revises: b7c8d9e0f1a2
+Revises: bfd8a3e54c8f
 Create Date: 2026-08-05
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 revision: str = "c8d9e0f1a2b3"
-down_revision: Union[str, Sequence[str], None] = "b7c8d9e0f1a2"
+down_revision: Union[str, Sequence[str], None] = "bfd8a3e54c8f"
 branch_labels = None
 depends_on = None
 

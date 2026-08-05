@@ -140,11 +140,6 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
     [gastos, cartaoIds, mesAtual, anoAtual, viewMode]
   )
 
-  const totalMes = useMemo(
-    () => gastosFiltrados.reduce((acc, g) => acc + g.valor, 0),
-    [gastosFiltrados]
-  )
-
   const projecaoFatura = useMemo(() =>
     gastos
       .filter(g => cartaoIds.has(g.cartao_id) && g.tipo_pagamento.toLowerCase() === 'credito' && !g.pago)
@@ -326,18 +321,6 @@ export default function GastosList({ apiUrl, activeProfile, viewMode }: GastosLi
 
       {/* Resumo do Mês */}
       <div className="dashboard-grid">
-        <div className="glass-panel summary-box hover-lift transition-all" style={{ marginBottom: '1.5rem' }}>
-          <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
-            {viewMode === 'diarios' ? 'Gastos à vista' : 'Parcelas do mês'} ({nomeMes})
-          </span>
-          <span className="summary-value" style={{ color: 'var(--text-primary)' }}>
-            {formatMoney(totalMes)}
-          </span>
-          <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-            {gastosFiltrados.length} {gastosFiltrados.length === 1 ? 'lançamento' : 'lançamentos'} em {nomeMes}
-          </span>
-        </div>
-
         <div className="glass-panel summary-box hover-lift transition-all" style={{ marginBottom: '1.5rem', borderLeft: '4px solid var(--accent-primary)' }}>
           <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
             Fatura prevista ({nomeMes})
