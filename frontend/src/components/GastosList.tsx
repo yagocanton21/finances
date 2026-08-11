@@ -60,6 +60,23 @@ const isParcela = (gasto: Gasto) =>
   gasto.tipo_pagamento.toLowerCase() === 'credito' &&
   (Boolean(gasto.compra_id) || gasto.parcelas > 1 || PARCELA_TEST_REGEX.test(gasto.descricao));
 
+const pertenceAoMesDaFatura = (gasto: Gasto, cartao: Cartao | undefined, mes: number, ano: number) => {
+  const data = new Date(gasto.data)
+  let mesFatura = data.getMonth()
+  let anoFatura = data.getFullYear()
+  const diaFechamento = cartao?.data_fatura || 15
+
+  if (data.getDate() >= diaFechamento) {
+    mesFatura += 1
+    if (mesFatura > 11) {
+      mesFatura = 0
+      anoFatura += 1
+    }
+  }
+
+  return mesFatura === mes && anoFatura === ano
+}
+
 const getTipoBadge = (tipo: string) => {
   switch (tipo.toLowerCase()) {
     case 'credito': return { label: 'Crédito', color: 'rgba(139, 92, 246, 0.25)', text: '#a78bfa' }
@@ -137,6 +154,10 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
         return true;
       })
       .filter(g => {
+        if (viewMode === 'parcelas') {
+          const cartao = cartoesDoPerfil.find(c => c.id === g.cartao_id)
+          return pertenceAoMesDaFatura(g, cartao, mesAtual, anoAtual)
+        }
         const d = new Date(g.data)
         return d.getMonth() === mesAtual && d.getFullYear() === anoAtual
       })
@@ -144,7 +165,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
         const diff = new Date(b.data).getTime() - new Date(a.data).getTime();
         return diff !== 0 ? diff : b.id - a.id;
       }),
-    [gastos, cartaoIds, mesAtual, anoAtual, viewMode]
+    [gastos, cartaoIds, cartoesDoPerfil, mesAtual, anoAtual, viewMode]
   )
 
   const projecaoFatura = useMemo(() =>
