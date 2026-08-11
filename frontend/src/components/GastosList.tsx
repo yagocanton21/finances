@@ -107,8 +107,12 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
         const anoAnt = mesAtual === 0 ? anoAtual - 1 : anoAtual;
 
         const [gastosAtualData, gastosAntData, cartoesData] = await Promise.all([
-          apiRequest<PaginatedResponse<Gasto>>(`${apiUrl}/gastos_diarios/?mes=${mesAtual + 1}&ano=${anoAtual}`),
-          apiRequest<PaginatedResponse<Gasto>>(`${apiUrl}/gastos_diarios/?mes=${mesAnt}&ano=${anoAnt}`),
+          viewMode === 'parcelas'
+            ? apiRequest<PaginatedResponse<Gasto>>(`${apiUrl}/gastos_diarios/?limit=1000`)
+            : apiRequest<PaginatedResponse<Gasto>>(`${apiUrl}/gastos_diarios/?mes=${mesAtual + 1}&ano=${anoAtual}`),
+          viewMode === 'parcelas'
+            ? Promise.resolve({ items: [] } as PaginatedResponse<Gasto>)
+            : apiRequest<PaginatedResponse<Gasto>>(`${apiUrl}/gastos_diarios/?mes=${mesAnt}&ano=${anoAnt}`),
           apiRequest<Cartao[]>(`${apiUrl}/cartoes/`)
         ])
 
@@ -125,7 +129,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
       }
     }
     fetchData()
-  }, [apiUrl, mesAtual, anoAtual])
+  }, [apiUrl, mesAtual, anoAtual, viewMode])
 
   // ─── Cálculos memoizados: só recalculados quando as dependências mudarem ───
 
