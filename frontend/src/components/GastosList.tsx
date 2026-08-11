@@ -111,7 +111,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
             ? apiRequest<PaginatedResponse<Gasto>>(`${apiUrl}/gastos_diarios/?limit=1000`)
             : apiRequest<PaginatedResponse<Gasto>>(`${apiUrl}/gastos_diarios/?mes=${mesAtual + 1}&ano=${anoAtual}`),
           viewMode === 'parcelas'
-            ? Promise.resolve({ items: [] } as PaginatedResponse<Gasto>)
+            ? Promise.resolve({ total: 0, limit: 0, offset: 0, items: [] } as PaginatedResponse<Gasto>)
             : apiRequest<PaginatedResponse<Gasto>>(`${apiUrl}/gastos_diarios/?mes=${mesAnt}&ano=${anoAnt}`),
           apiRequest<Cartao[]>(`${apiUrl}/cartoes/`)
         ])
