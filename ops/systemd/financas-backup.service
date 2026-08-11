@@ -1,0 +1,10 @@
+[Unit]
+Description=Backup criptografado do PostgreSQL de Financas
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/finan-as
+EnvironmentFile=/etc/financas/backup.env
+ExecStart=/home/ubuntu/finan-as/ops/backup-postgres.sh

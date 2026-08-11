@@ -1,0 +1,10 @@
+[Unit]
+Description=Agendamento diário do backup de Financas
+
+[Timer]
+OnCalendar=Mon,Thu *-*-* 02:15:00 UTC
+Persistent=true
+Unit=financas-backup.service
+
+[Install]
+WantedBy=timers.target

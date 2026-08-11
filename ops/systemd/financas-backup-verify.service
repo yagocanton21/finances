@@ -1,0 +1,10 @@
+[Unit]
+Description=Teste de restauração do backup de Financas
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/finan-as
+EnvironmentFile=/etc/financas/backup.env
+ExecStart=/bin/bash -lc 'latest=$(ls -1t /var/backups/financas/daily/*.dump.age 2>/dev/null | head -n 1); test -n "$latest"; exec /home/ubuntu/finan-as/ops/verify-postgres-backup.sh "$latest"'

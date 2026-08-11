@@ -1,0 +1,10 @@
+[Unit]
+Description=Agendamento do teste diário de restauração de Financas
+
+[Timer]
+OnCalendar=Mon,Thu *-*-* 02:45:00 UTC
+Persistent=true
+Unit=financas-backup-verify.service
+
+[Install]
+WantedBy=timers.target
