@@ -85,17 +85,26 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            set -e
-            mkdir -p /home/ubuntu/finan-as
-            cd /home/ubuntu/finan-as
+            set -euo pipefail
+            APP_DIR=/home/ubuntu/finan-as
+            RELEASE_DIR=/home/ubuntu/finan-as-release
 
-            git init
-            git remote add origin https://github.com/yagocanton21/finances.git || true
-            git fetch origin
-            git reset --hard origin/main
+            # O diretório antigo pode conter backups, .env e alterações manuais.
+            # O deploy usa uma cópia limpa para nunca sobrescrever esse conteúdo.
+            if [ ! -d "$RELEASE_DIR/.git" ]; then
+              git clone --branch main https://github.com/yagocanton21/finances.git "$RELEASE_DIR"
+            else
+              git -C "$RELEASE_DIR" fetch origin main
+              git -C "$RELEASE_DIR" checkout --detach origin/main
+            fi
 
-            docker compose up -d --build
-            docker compose ps
+            if [ ! -f "$RELEASE_DIR/.env" ] && [ -f "$APP_DIR/.env" ]; then
+              install -m 600 "$APP_DIR/.env" "$RELEASE_DIR/.env"
+            fi
+
+            cd "$RELEASE_DIR"
+            docker compose -p finan-as up -d --build --remove-orphans
+            docker compose -p finan-as ps
 
   alert_hermes_failure:
     name: Alert Hermes on Failure

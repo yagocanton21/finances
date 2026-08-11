@@ -225,6 +225,20 @@ def editar_gasto_diario(
         if patch.descricao is not None:
             gasto.descricao = patch.descricao
         if patch.data is not None:
+            if gasto.compra_id and gasto.numero_parcela > 1:
+                irmaos = db.query(GastoDiario).filter(
+                    GastoDiario.compra_id == gasto.compra_id,
+                ).order_by(GastoDiario.numero_parcela).all()
+                if irmaos:
+                    primeira = irmaos[0]
+                    mes_esperado = primeira.data.month + gasto.numero_parcela - 1
+                    ano_esperado = primeira.data.year + (mes_esperado - 1) // 12
+                    mes_esperado = ((mes_esperado - 1) % 12) + 1
+                    if patch.data.month != mes_esperado or patch.data.year != ano_esperado:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"Data fora da sequencia: esperado {mes_esperado:02d}/{ano_esperado}",
+                        )
             gasto.data = patch.data
         if patch.categoria_id is not None:
             gasto.categoria_id = patch.categoria_id
@@ -258,6 +272,19 @@ def deletar_gasto_diario(id: int, db: Session = Depends(get_db)):
             )
 
         cartao = _buscar_cartao_bloqueado(db, gasto.cartao_id)
+        if gasto.compra_id:
+            parcelas_pagas = db.query(GastoDiario).filter(
+                GastoDiario.compra_id == gasto.compra_id,
+                GastoDiario.pago.is_(True),
+            ).count()
+            if parcelas_pagas > 0:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Compra parcelada com {parcelas_pagas} parcela(s) ja paga(s); "
+                        "estorne a fatura primeiro"
+                    ),
+                )
         _estornar_gasto(cartao, gasto)
         db.delete(gasto)
         db.commit()

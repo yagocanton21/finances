@@ -1,6 +1,8 @@
+from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
+import pytz
 from sqlalchemy import extract, func
 from sqlalchemy.orm import Session
 
@@ -25,6 +27,16 @@ def resumo_mensal(
     ).filter(
         extract("month", Receita.data) == mes,
         extract("year", Receita.data) == ano,
+        filtro_conta,
+    ).scalar() or Decimal("0.00")
+
+    hoje = datetime.now(pytz.timezone("America/Sao_Paulo"))
+    parcelas_futuras = db.query(func.sum(GastoDiario.valor)).join(
+        Cartao, GastoDiario.cartao_id == Cartao.id
+    ).filter(
+        GastoDiario.tipo_pagamento == TipoPagamento.credito.value,
+        GastoDiario.pago.is_(False),
+        GastoDiario.data > hoje,
         filtro_conta,
     ).scalar() or Decimal("0.00")
 
@@ -81,4 +93,5 @@ def resumo_mensal(
         "saldo_final": total_receitas - total_gastos,
         "categorias": [{"nome": nome, "total": total} for nome, total in categorias],
         "guardado": guardado,
+        "parcelas_futuras": parcelas_futuras,
     }

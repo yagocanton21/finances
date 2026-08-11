@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class CartaoBase(BaseModel):
@@ -9,7 +9,7 @@ class CartaoBase(BaseModel):
     dono: str = Field(default="Eu", min_length=1, max_length=80)
     limite: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
     saldo: Decimal = Field(default=Decimal("0"), max_digits=12, decimal_places=2)
-    data_fatura: int = Field(ge=1, le=31)
+    data_fatura: int = Field(ge=1, le=28)
     dia_vencimento: int = Field(ge=1, le=31)
     fatura_atual: Decimal = Field(
         default=Decimal("0"), ge=0, max_digits=12, decimal_places=2
@@ -38,3 +38,9 @@ class PagarFaturaIn(BaseModel):
     mes_ref: Optional[int] = Field(default=None, ge=1, le=12)
     ano_ref: Optional[int] = Field(default=None, ge=1900, le=2200)
     idempotency_key: Optional[str] = Field(default=None, min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def validar_ref(self):
+        if self.ano_ref is not None and self.mes_ref is None:
+            raise ValueError("ano_ref requer mes_ref")
+        return self

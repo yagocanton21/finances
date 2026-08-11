@@ -1,5 +1,6 @@
 services:
   postgres:
+    restart: unless-stopped
     image: postgres:15-alpine
     container_name: db_postgres
     environment:
@@ -15,14 +16,36 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  migration:
+    build: .
+    container_name: financas_migration
+    command: alembic upgrade head
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
 
   api:
+    restart: unless-stopped
     build: .
     container_name: financas_api
-    command:
-      - sh
-      - -c
-      - alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2
     ports:
       - "127.0.0.1:8000:8000"
     environment:
@@ -36,14 +59,29 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  frontend:
-    build: ./frontend
+  nginx:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
     container_name: financas_frontend
     ports:
-      - "127.0.0.1:3000:80"
+      - "80:80"
     depends_on:
       - api
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   postgres_data:
