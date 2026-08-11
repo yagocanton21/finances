@@ -37,3 +37,4 @@ class PagarFaturaIn(BaseModel):
     )
     mes_ref: Optional[int] = Field(default=None, ge=1, le=12)
     ano_ref: Optional[int] = Field(default=None, ge=1900, le=2200)
+    idempotency_key: Optional[str] = Field(default=None, min_length=1, max_length=120)

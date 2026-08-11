@@ -124,7 +124,8 @@ class ApiFinanceiraIntegrationTest(unittest.TestCase):
         corpo = response.json()
         self.assertEqual(Decimal(corpo["valor_pago"]), Decimal("125.50"))
         self.assertEqual(Decimal(corpo["novo_saldo"]), Decimal("374.50"))
-        self.assertEqual(Decimal(corpo["novo_limite"]), Decimal("1125.50"))
+        # O limite disponível volta ao valor anterior à compra.
+        self.assertEqual(Decimal(corpo["novo_limite"]), Decimal("1000.00"))
 
         response = self.client.get(f"/gastos_diarios/{gasto['id']}")
         self.assertEqual(response.status_code, 200, response.text)
@@ -148,6 +149,40 @@ class ApiFinanceiraIntegrationTest(unittest.TestCase):
         response = self.client.get(f"/gastos_diarios/{gasto['id']}")
         self.assertEqual(response.status_code, 200, response.text)
         self.assertFalse(response.json()["pago"])
+
+        segunda = self.client.post(
+            f"/cartoes/{cartao['id']}/pagar_fatura",
+            json={"valor": "75.50", "mes_ref": 7, "ano_ref": 2026},
+        )
+        self.assertEqual(segunda.status_code, 200, segunda.text)
+        self.assertEqual(Decimal(segunda.json()["saldo_restante"]), Decimal("0.00"))
+
+        excesso = self.client.post(
+            f"/cartoes/{cartao['id']}/pagar_fatura",
+            json={"mes_ref": 7, "ano_ref": 2026},
+        )
+        self.assertEqual(excesso.status_code, 409, excesso.text)
+
+    def test_pagamento_idempotente_nao_debita_duas_vezes(self):
+        cartao = self.criar_cartao(saldo="500.00", limite="1000.00")
+        self.criar_gasto(cartao["id"], valor="125.50", data="2026-07-10T12:00:00")
+        payload = {
+            "valor": "50.00",
+            "mes_ref": 7,
+            "ano_ref": 2026,
+            "idempotency_key": "pagamento-teste-1",
+        }
+
+        primeira = self.client.post(
+            f"/cartoes/{cartao['id']}/pagar_fatura", json=payload
+        )
+        segunda = self.client.post(
+            f"/cartoes/{cartao['id']}/pagar_fatura", json=payload
+        )
+        self.assertEqual(primeira.status_code, 200, primeira.text)
+        self.assertEqual(segunda.status_code, 200, segunda.text)
+        self.assertEqual(primeira.json()["pagamento_id"], segunda.json()["pagamento_id"])
+        self.assertEqual(Decimal(segunda.json()["saldo_restante"]), Decimal("75.50"))
 
     def test_operacao_rejeita_limite_insuficiente_sem_criar_gasto(self):
         cartao = self.criar_cartao(saldo="500.00", limite="50.00")

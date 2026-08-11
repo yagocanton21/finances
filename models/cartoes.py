@@ -19,3 +19,7 @@ class Cartao(Base):
     gastos = relationship("GastoDiario", back_populates="cartao", passive_deletes=True)
     receitas = relationship("Receita", back_populates="cartao", passive_deletes=True)
     aportes_reserva = relationship("AporteReserva", back_populates="cartao", passive_deletes=True)
+    faturas = relationship("Fatura", back_populates="cartao", passive_deletes=True)
+    pagamentos_fatura = relationship(
+        "PagamentoFatura", back_populates="cartao", passive_deletes=True
+    )
