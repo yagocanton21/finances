@@ -4,6 +4,7 @@ from .gastos_diarios import GastoDiarioBase, GastoDiarioPatch
 from .receitas import ReceitaBase
 from .paginacao import PaginatedResponse
 from .aportes_reserva import AporteReservaBase
+from .agente import PagamentoFaturaAgenteIn
 
 __all__ = [
     'CategoriaBase',
@@ -14,4 +15,5 @@ __all__ = [
     'ReceitaBase',
     'PaginatedResponse',
     'AporteReservaBase',
+    'PagamentoFaturaAgenteIn',
 ]

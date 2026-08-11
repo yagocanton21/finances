@@ -1,5 +1,6 @@
 import os
 import secrets
+from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Annotated, Optional
 from uuid import uuid4
@@ -12,9 +13,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import AuditoriaAgente, Cartao, Categoria, GastoDiario, Receita
-from schemas.agente import LancamentoAgenteIn, TipoLancamento
+import pytz
+
+from models import AuditoriaAgente, Cartao, Categoria, Fatura, GastoDiario, Receita
+from schemas.agente import LancamentoAgenteIn, PagamentoFaturaAgenteIn, TipoLancamento
 from schemas.gastos_diarios import TipoPagamento
+from services.faturas import processar_pagamento_fatura
 
 router = APIRouter()
 CENTAVOS = Decimal("0.01")
@@ -31,12 +35,18 @@ def autenticar_agente(
     return "hermes"
 
 
-def _resolver_cartao(db: Session, entrada: LancamentoAgenteIn, bloquear=False) -> Cartao:
+def _resolver_conta(
+    db: Session,
+    *,
+    conta_id: Optional[int],
+    conta: Optional[str],
+    bloquear=False,
+) -> Cartao:
     query = db.query(Cartao).filter(Cartao.ativo.is_(True))
-    if entrada.conta_id:
-        query = query.filter(Cartao.id == entrada.conta_id)
+    if conta_id:
+        query = query.filter(Cartao.id == conta_id)
     else:
-        query = query.filter(func.lower(Cartao.nome) == entrada.conta.strip().lower())
+        query = query.filter(func.lower(Cartao.nome) == conta.strip().lower())
     if bloquear:
         query = query.with_for_update()
     cartoes = query.all()
@@ -48,6 +58,15 @@ def _resolver_cartao(db: Session, entrada: LancamentoAgenteIn, bloquear=False) -
             detail={"mensagem": "Nome de conta ambiguo", "conta_ids": [c.id for c in cartoes]},
         )
     return cartoes[0]
+
+
+def _resolver_cartao(db: Session, entrada: LancamentoAgenteIn, bloquear=False) -> Cartao:
+    return _resolver_conta(
+        db,
+        conta_id=entrada.conta_id,
+        conta=entrada.conta,
+        bloquear=bloquear,
+    )
 
 
 def _resolver_categoria(db: Session, entrada: LancamentoAgenteIn) -> Optional[Categoria]:
@@ -269,6 +288,168 @@ def consultar_lancamento(external_id: str, db: Session = Depends(get_db)):
         "criado_em": auditoria.criado_em,
         "resposta": auditoria.resposta,
     }
+
+
+def _resumo_pagamento_agente(
+    db: Session, cartao: Cartao, mes_ref: int, ano_ref: int
+):
+    fatura = db.query(Fatura).filter(
+        Fatura.cartao_id == cartao.id,
+        Fatura.mes_ref == mes_ref,
+        Fatura.ano_ref == ano_ref,
+    ).first()
+    gastos = db.query(GastoDiario).filter(
+        GastoDiario.cartao_id == cartao.id,
+        GastoDiario.tipo_pagamento == TipoPagamento.credito.value,
+    ).all()
+    from services.faturas import pertence_a_fatura
+
+    gastos_da_fatura = [
+        gasto for gasto in gastos
+        if pertence_a_fatura(gasto, cartao.data_fatura, mes_ref, ano_ref)
+    ]
+    total_lancado = sum((gasto.valor for gasto in gastos_da_fatura), Decimal("0"))
+    total = max(fatura.total if fatura else Decimal("0"), total_lancado)
+    total_pago = sum((item.valor for item in fatura.pagamentos), Decimal("0")) if fatura else Decimal("0")
+    return {
+        "cartao_id": cartao.id,
+        "cartao": cartao.nome,
+        "mes_ref": mes_ref,
+        "ano_ref": ano_ref,
+        "total": total,
+        "total_pago": total_pago,
+        "saldo_restante": max(total - total_pago, Decimal("0")),
+        "situacao": fatura.situacao if fatura else ("aberta" if total else "sem_lancamentos"),
+    }
+
+
+@router.post("/pagamentos/fatura/preview", dependencies=[Depends(autenticar_agente)])
+def prever_pagamento_fatura(
+    entrada: PagamentoFaturaAgenteIn, db: Session = Depends(get_db)
+):
+    hoje = datetime.now(pytz.timezone("America/Sao_Paulo"))
+    cartao = _resolver_conta(
+        db, conta_id=entrada.conta_id, conta=entrada.conta, bloquear=False
+    )
+    resumo = _resumo_pagamento_agente(
+        db, cartao, entrada.mes_ref or hoje.month, entrada.ano_ref or hoje.year
+    )
+    if resumo["saldo_restante"] <= 0:
+        raise HTTPException(status_code=409, detail="Nao ha fatura em aberto")
+    valor = entrada.valor or resumo["saldo_restante"]
+    if valor > resumo["saldo_restante"]:
+        raise HTTPException(status_code=409, detail="Valor excede o saldo restante da fatura")
+    return {
+        "valido": True,
+        "precisa_confirmacao": True,
+        "operacao": "pagar_fatura",
+        "resumo": {**resumo, "valor": valor, "movimentara_saldo": True},
+    }
+
+
+def _registrar_pagamento_agente(
+    entrada: PagamentoFaturaAgenteIn,
+    *,
+    agente: str,
+    idempotency_key: Optional[str],
+    db: Session,
+    movimentar_saldo: bool,
+    origem: str,
+):
+    external_id = idempotency_key or entrada.external_id
+    if not external_id:
+        raise HTTPException(status_code=422, detail="Idempotency-Key ou external_id e obrigatorio")
+    existente = db.query(AuditoriaAgente).filter(
+        AuditoriaAgente.external_id == external_id
+    ).first()
+    if existente:
+        return {**existente.resposta, "idempotente": True}
+    if not entrada.confirmado:
+        raise HTTPException(
+            status_code=409,
+            detail="Confirmacao obrigatoria; execute o preview antes de registrar",
+        )
+
+    hoje = datetime.now(pytz.timezone("America/Sao_Paulo"))
+    cartao = _resolver_conta(
+        db, conta_id=entrada.conta_id, conta=entrada.conta, bloquear=False
+    )
+    mes_ref = entrada.mes_ref or hoje.month
+    ano_ref = entrada.ano_ref or hoje.year
+    resposta = processar_pagamento_fatura(
+        db,
+        cartao_id=cartao.id,
+        mes_ref=mes_ref,
+        ano_ref=ano_ref,
+        valor=entrada.valor,
+        idempotency_key=external_id,
+        origem=origem,
+        movimentar_saldo=movimentar_saldo,
+        agora=hoje,
+    )
+    resposta.update({"agente": agente, "external_id": external_id})
+    auditoria = AuditoriaAgente(
+        external_id=external_id,
+        agente=agente,
+        acao="pagar_fatura" if movimentar_saldo else "reconciliar_pagamento_fatura",
+        entidade="fatura",
+        entidade_id=resposta["fatura_id"],
+        status="registrado",
+        requisicao=jsonable_encoder(entrada),
+        resposta=jsonable_encoder(resposta),
+    )
+    db.add(auditoria)
+    db.commit()
+    return resposta
+
+
+@router.post("/pagamentos/fatura")
+def pagar_fatura_pelo_agente(
+    entrada: PagamentoFaturaAgenteIn,
+    agente: str = Depends(autenticar_agente),
+    idempotency_key: Annotated[Optional[str], Header(alias="Idempotency-Key")] = None,
+    db: Session = Depends(get_db),
+):
+    try:
+        return _registrar_pagamento_agente(
+            entrada,
+            agente=agente,
+            idempotency_key=idempotency_key,
+            db=db,
+            movimentar_saldo=True,
+            origem="hermes",
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Chave de idempotencia em conflito")
+
+
+@router.post("/pagamentos/fatura/reconciliar")
+def reconciliar_pagamento_fatura_pelo_agente(
+    entrada: PagamentoFaturaAgenteIn,
+    agente: str = Depends(autenticar_agente),
+    idempotency_key: Annotated[Optional[str], Header(alias="Idempotency-Key")] = None,
+    db: Session = Depends(get_db),
+):
+    """Registra pagamento já feito no banco/cartão sem debitar novamente o saldo."""
+    try:
+        return _registrar_pagamento_agente(
+            entrada,
+            agente=agente,
+            idempotency_key=idempotency_key,
+            db=db,
+            movimentar_saldo=False,
+            origem="hermes_externo",
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Chave de idempotencia em conflito")
 
 
 @router.delete("/lancamentos/{external_id}")

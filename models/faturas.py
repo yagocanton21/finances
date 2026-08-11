@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -43,6 +43,8 @@ class PagamentoFatura(Base):
     valor = Column(Numeric(12, 2), nullable=False)
     data_pagamento = Column(DateTime(timezone=True), nullable=False)
     situacao = Column(String(20), nullable=False)
+    origem = Column(String(20), nullable=False, default="sistema", server_default="sistema")
+    movimentou_saldo = Column(Boolean, nullable=False, default=True, server_default="true")
     idempotency_key = Column(String(120), nullable=True, unique=True, index=True)
 
     fatura = relationship("Fatura", back_populates="pagamentos")

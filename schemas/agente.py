@@ -40,3 +40,21 @@ class LancamentoAgenteIn(BaseModel):
         elif self.tipo_pagamento is not None or self.parcelas != 1:
             raise ValueError("Receitas nao aceitam tipo_pagamento ou parcelas")
         return self
+
+
+class PagamentoFaturaAgenteIn(BaseModel):
+    conta_id: Optional[int] = Field(default=None, gt=0)
+    conta: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    valor: Optional[Decimal] = Field(default=None, gt=0, max_digits=12, decimal_places=2)
+    mes_ref: Optional[int] = Field(default=None, ge=1, le=12)
+    ano_ref: Optional[int] = Field(default=None, ge=1900, le=2200)
+    confirmado: bool = False
+    external_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def validar_pagamento(self):
+        if bool(self.conta_id) == bool(self.conta):
+            raise ValueError("Informe exatamente um entre conta_id e conta")
+        if self.ano_ref is not None and self.mes_ref is None:
+            raise ValueError("ano_ref requer mes_ref")
+        return self

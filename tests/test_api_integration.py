@@ -21,6 +21,7 @@ if RUN_INTEGRATION_TESTS:
 class ApiFinanceiraIntegrationTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        os.environ["HERMES_API_TOKEN"] = "token-teste"
         cls.client = TestClient(app)
 
     def setUp(self):
@@ -29,7 +30,8 @@ class ApiFinanceiraIntegrationTest(unittest.TestCase):
         with engine.begin() as connection:
             connection.execute(
                 text(
-                    "TRUNCATE TABLE gasto_diarios, receitas, "
+                    "TRUNCATE TABLE gasto_diarios, receitas, faturas, "
+                    "pagamentos_fatura, "
                     "aportes_reserva, auditoria_agente, categorias, cartoes "
                     "RESTART IDENTITY CASCADE"
                 )
@@ -183,6 +185,52 @@ class ApiFinanceiraIntegrationTest(unittest.TestCase):
         self.assertEqual(segunda.status_code, 200, segunda.text)
         self.assertEqual(primeira.json()["pagamento_id"], segunda.json()["pagamento_id"])
         self.assertEqual(Decimal(segunda.json()["saldo_restante"]), Decimal("75.50"))
+
+    def test_hermes_reconcilia_fatura_sem_debitar_e_marca_parcela(self):
+        cartao = self.criar_cartao(saldo="500.00", limite="1000.00")
+        primeira = self.criar_gasto(
+            cartao["id"], valor="100.00", parcelas=2, data="2026-07-10T12:00:00"
+        )
+        headers = {"X-Agent-Token": "token-teste", "Idempotency-Key": "hermes-pag-1"}
+
+        preview = self.client.post(
+            "/agent/v1/pagamentos/fatura/preview",
+            headers={"X-Agent-Token": "token-teste"},
+            json={"conta_id": cartao["id"], "mes_ref": 7, "ano_ref": 2026},
+        )
+        self.assertEqual(preview.status_code, 200, preview.text)
+        self.assertTrue(preview.json()["precisa_confirmacao"])
+        self.assertEqual(Decimal(preview.json()["resumo"]["valor"]), Decimal("50.00"))
+
+        reconciliado = self.client.post(
+            "/agent/v1/pagamentos/fatura/reconciliar",
+            headers=headers,
+            json={
+                "conta_id": cartao["id"],
+                "mes_ref": 7,
+                "ano_ref": 2026,
+                "confirmado": True,
+            },
+        )
+        self.assertEqual(reconciliado.status_code, 200, reconciliado.text)
+        self.assertFalse(reconciliado.json()["movimentou_saldo"])
+
+        gasto_atualizado = self.client.get(f"/gastos_diarios/{primeira['id']}")
+        self.assertEqual(gasto_atualizado.status_code, 200, gasto_atualizado.text)
+        self.assertTrue(gasto_atualizado.json()["pago"])
+
+        repetido = self.client.post(
+            "/agent/v1/pagamentos/fatura/reconciliar",
+            headers=headers,
+            json={
+                "conta_id": cartao["id"],
+                "mes_ref": 7,
+                "ano_ref": 2026,
+                "confirmado": True,
+            },
+        )
+        self.assertEqual(repetido.status_code, 200, repetido.text)
+        self.assertTrue(repetido.json()["idempotente"])
 
     def test_operacao_rejeita_limite_insuficiente_sem_criar_gasto(self):
         cartao = self.criar_cartao(saldo="500.00", limite="50.00")

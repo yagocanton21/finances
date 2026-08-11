@@ -10,6 +10,7 @@ from database import get_db
 from models import Cartao, Fatura, GastoDiario, PagamentoFatura
 from schemas import CartaoBase
 from schemas.cartoes import PagarFaturaIn
+from services.faturas import pertence_a_fatura, processar_pagamento_fatura
 
 router = APIRouter()
 
@@ -17,15 +18,7 @@ router = APIRouter()
 def _pertence_a_fatura(
     gasto: GastoDiario, dia_fechamento: int, mes_ref: int, ano_ref: int
 ) -> bool:
-    data = gasto.data
-    mes_fatura = data.month
-    ano_fatura = data.year
-    if data.day >= dia_fechamento:
-        mes_fatura += 1
-        if mes_fatura > 12:
-            mes_fatura = 1
-            ano_fatura += 1
-    return mes_fatura == mes_ref and ano_fatura == ano_ref
+    return pertence_a_fatura(gasto, dia_fechamento, mes_ref, ano_ref)
 
 
 def _calcular_fatura_do_mes(
@@ -167,6 +160,20 @@ def pagar_fatura(
         hoje = datetime.now(pytz.timezone("America/Sao_Paulo"))
         mes_ref = pagamento.mes_ref if pagamento and pagamento.mes_ref else hoje.month
         ano_ref = pagamento.ano_ref if pagamento and pagamento.ano_ref else hoje.year
+
+        resposta = processar_pagamento_fatura(
+            db,
+            cartao_id=id,
+            mes_ref=mes_ref,
+            ano_ref=ano_ref,
+            valor=pagamento.valor if pagamento else None,
+            idempotency_key=pagamento.idempotency_key if pagamento else None,
+            origem="sistema",
+            movimentar_saldo=True,
+            agora=hoje,
+        )
+        db.commit()
+        return resposta
 
         gastos = db.query(GastoDiario).filter(
             GastoDiario.cartao_id == cartao.id,
