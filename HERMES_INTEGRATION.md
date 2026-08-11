@@ -12,6 +12,15 @@ O Hermes deve enviar esse valor no cabeçalho `X-Agent-Token`. Toda criação ta
 precisa de `Idempotency-Key`, usando preferencialmente o ID imutável da mensagem
 que originou o lançamento.
 
+## Pagamento de fatura
+
+Para pagar usando o saldo do sistema, use `POST /agent/v1/pagamentos/fatura/preview`
+e depois `POST /agent/v1/pagamentos/fatura` com `confirmado: true`.
+
+Quando o usuário disser que já pagou diretamente no banco ou no cartão, use
+`POST /agent/v1/pagamentos/fatura/reconciliar`. Essa operação registra o histórico
+e marca as parcelas cobertas sem debitar novamente o saldo.
+
 ## Fluxo recomendado
 
 1. Consulte `GET /agent/v1/contas` e `GET /agent/v1/categorias`.
