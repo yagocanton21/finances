@@ -43,6 +43,12 @@ class GastoDiarioPatch(BaseModel):
     categoria_id: Optional[int] = None
 
 
+class ConciliarPagamentoIn(BaseModel):
+    """Ajusta apenas o histórico, sem movimentar saldo ou limite."""
+
+    pago: bool
+
+
 class GastoDiarioInDb(GastoDiarioBase):
     id: int
     pago: bool

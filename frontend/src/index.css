@@ -632,3 +632,18 @@ p { color: var(--text-secondary); line-height: 1.5; }
 .timeline-status.pendente {
   color: var(--warning);
 }
+
+.timeline-status-btn {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.timeline-status-btn:hover:not(:disabled) {
+  filter: brightness(1.2);
+}
+
+.timeline-status-btn:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}

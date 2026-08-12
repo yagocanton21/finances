@@ -24,6 +24,18 @@ router = APIRouter()
 CENTAVOS = Decimal("0.01")
 
 
+def _normalizar_requisicao(entrada: LancamentoAgenteIn) -> dict:
+    """Payload financeiro usado para validar a reutilizacao da chave idempotente."""
+    return jsonable_encoder(entrada.model_dump(exclude={"external_id"}))
+
+
+def _mesma_requisicao(requisicao_salva: dict, entrada: LancamentoAgenteIn) -> bool:
+    # Auditorias criadas antes desta validacao guardavam external_id no payload.
+    salva = dict(requisicao_salva)
+    salva.pop("external_id", None)
+    return salva == _normalizar_requisicao(entrada)
+
+
 def autenticar_agente(
     x_agent_token: Annotated[Optional[str], Header()] = None,
 ) -> str:
@@ -183,6 +195,11 @@ def registrar_lancamento(
         AuditoriaAgente.external_id == external_id
     ).first()
     if existente:
+        if not _mesma_requisicao(existente.requisicao, entrada):
+            raise HTTPException(
+                status_code=409,
+                detail="Chave de idempotencia ja utilizada com outro lancamento",
+            )
         return {**existente.resposta, "idempotente": True}
 
     try:
@@ -252,7 +269,7 @@ def registrar_lancamento(
             entidade=entidade,
             entidade_id=ids[0],
             status="registrado",
-            requisicao=jsonable_encoder(entrada),
+            requisicao=_normalizar_requisicao(entrada),
             resposta=jsonable_encoder(resposta),
         )
         db.add(auditoria)
@@ -267,6 +284,11 @@ def registrar_lancamento(
             AuditoriaAgente.external_id == external_id
         ).first()
         if existente:
+            if not _mesma_requisicao(existente.requisicao, entrada):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Chave de idempotencia ja utilizada com outro lancamento",
+                )
             return {**existente.resposta, "idempotente": True}
         raise HTTPException(status_code=409, detail="Chave de idempotencia em conflito")
     except Exception:

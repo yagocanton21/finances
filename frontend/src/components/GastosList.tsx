@@ -44,6 +44,26 @@ interface PaginatedResponse<T> {
   items: T[];
 }
 
+const PAGE_SIZE = 1000;
+
+async function fetchAllGastos(url: string): Promise<Gasto[]> {
+  const items: Gasto[] = [];
+  let offset = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const separator = url.includes('?') ? '&' : '?';
+    const page = await apiRequest<PaginatedResponse<Gasto>>(
+      `${url}${separator}limit=${PAGE_SIZE}&offset=${offset}`
+    );
+    items.push(...page.items);
+    offset += page.items.length;
+    hasMore = page.items.length > 0 && offset < page.total;
+  }
+
+  return items;
+}
+
 // Formatter criado uma única vez no nível de módulo (evita recriação a cada render)
 const moneyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const formatMoney = (value: number) => moneyFormatter.format(value);
@@ -98,6 +118,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
   // Modal de Parcelas
   const [gastoSelecionado, setGastoSelecionado] = useState<Gasto | null>(null)
   const [parcelasDetalhadas, setParcelasDetalhadas] = useState<Gasto[]>([])
+  const [conciliandoId, setConciliandoId] = useState<number | null>(null)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -108,16 +129,16 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
 
         const [gastosAtualData, gastosAntData, cartoesData] = await Promise.all([
           viewMode === 'parcelas'
-            ? apiRequest<PaginatedResponse<Gasto>>(`${apiUrl}/gastos_diarios/?limit=1000`)
-            : apiRequest<PaginatedResponse<Gasto>>(`${apiUrl}/gastos_diarios/?mes=${mesAtual + 1}&ano=${anoAtual}`),
+            ? fetchAllGastos(`${apiUrl}/gastos_diarios/`)
+            : fetchAllGastos(`${apiUrl}/gastos_diarios/?mes=${mesAtual + 1}&ano=${anoAtual}`),
           viewMode === 'parcelas'
-            ? Promise.resolve({ total: 0, limit: 0, offset: 0, items: [] } as PaginatedResponse<Gasto>)
-            : apiRequest<PaginatedResponse<Gasto>>(`${apiUrl}/gastos_diarios/?mes=${mesAnt}&ano=${anoAnt}`),
+            ? Promise.resolve([] as Gasto[])
+            : fetchAllGastos(`${apiUrl}/gastos_diarios/?mes=${mesAnt}&ano=${anoAnt}`),
           apiRequest<Cartao[]>(`${apiUrl}/cartoes/`)
         ])
 
         // Remove duplicatas se houver
-        const allGastos = [...gastosAtualData.items, ...gastosAntData.items];
+        const allGastos = [...gastosAtualData, ...gastosAntData];
         const uniqueGastos = Array.from(new Map(allGastos.map(g => [g.id, g])).values());
 
         setGastos(uniqueGastos)
@@ -307,14 +328,39 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
       setParcelasDetalhadas([])
       if (gasto.compra_id) {
         try {
-          const parcelas = await apiRequest<PaginatedResponse<Gasto>>(
-            `${apiUrl}/gastos_diarios/?compra_id=${encodeURIComponent(gasto.compra_id)}&limit=120`
+          const parcelas = await fetchAllGastos(
+            `${apiUrl}/gastos_diarios/?compra_id=${encodeURIComponent(gasto.compra_id)}`
           )
-          setParcelasDetalhadas(parcelas.items)
+          setParcelasDetalhadas(parcelas)
         } catch (error) {
           console.error('Erro ao buscar parcelas:', error)
         }
       }
+    }
+  }
+
+  const handleConciliarPagamento = async (parcela: Gasto) => {
+    const novoStatus = !parcela.pago
+    const acao = novoStatus ? 'marcar esta parcela como paga' : 'voltar esta parcela para pendente'
+    if (!confirm(`Deseja ${acao}? Isso apenas corrige o histórico e não movimenta saldo.`)) return
+
+    setConciliandoId(parcela.id)
+    try {
+      const atualizada = await apiRequest<Gasto>(
+        `${apiUrl}/gastos_diarios/${parcela.id}/conciliar-pagamento`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pago: novoStatus })
+        }
+      )
+      setParcelasDetalhadas(prev => prev.map(p => p.id === atualizada.id ? atualizada : p))
+      setGastos(prev => prev.map(p => p.id === atualizada.id ? atualizada : p))
+      setGastoSelecionado(prev => prev?.id === atualizada.id ? atualizada : prev)
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Erro ao corrigir o pagamento')
+    } finally {
+      setConciliandoId(null)
     }
   }
 
@@ -492,9 +538,15 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
                     </div>
                     <div className="timeline-valor">
                       <span>{formatMoney(p.valor)}</span>
-                      <span className={`timeline-status ${isPaga ? 'paga' : 'pendente'}`}>
-                        {isPaga ? '✓ Paga' : '⏳ Pendente'}
-                      </span>
+                      <button
+                        type="button"
+                        className={`timeline-status timeline-status-btn ${isPaga ? 'paga' : 'pendente'}`}
+                        onClick={() => handleConciliarPagamento(p)}
+                        disabled={conciliandoId === p.id}
+                        title={isPaga ? 'Voltar para pendente' : 'Registrar pagamento feito fora do sistema'}
+                      >
+                        {conciliandoId === p.id ? 'Salvando...' : isPaga ? '✓ Paga' : '⏳ Pendente'}
+                      </button>
                     </div>
                   </div>
                 )

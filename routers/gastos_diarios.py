@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Cartao, GastoDiario
 from schemas import GastoDiarioBase
-from schemas.gastos_diarios import GastoDiarioPatch, TipoPagamento
+from schemas.gastos_diarios import ConciliarPagamentoIn, GastoDiarioPatch, TipoPagamento
 
 router = APIRouter()
 CENTAVOS = Decimal("0.01")
@@ -141,6 +141,40 @@ def buscar_gasto_diario(id: int, db: Session = Depends(get_db)):
     if not gasto:
         raise HTTPException(status_code=404, detail="Gasto diario nao encontrado")
     return gasto
+
+
+@router.patch("/{id}/conciliar-pagamento")
+def conciliar_pagamento(
+    id: int,
+    conciliacao: ConciliarPagamentoIn,
+    db: Session = Depends(get_db),
+):
+    """Registra pagamentos feitos antes/fora do sistema sem cobrá-los novamente."""
+    try:
+        gasto = (
+            db.query(GastoDiario)
+            .filter(GastoDiario.id == id)
+            .with_for_update()
+            .first()
+        )
+        if not gasto:
+            raise HTTPException(status_code=404, detail="Gasto diario nao encontrado")
+        if gasto.tipo_pagamento != TipoPagamento.credito.value:
+            raise HTTPException(
+                status_code=409,
+                detail="A conciliacao manual e permitida apenas para gastos no credito",
+            )
+
+        gasto.pago = conciliacao.pago
+        db.commit()
+        db.refresh(gasto)
+        return gasto
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Erro ao conciliar pagamento")
 
 
 @router.put("/{id}")
