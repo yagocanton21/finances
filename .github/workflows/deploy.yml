@@ -110,6 +110,7 @@ jobs:
               install -m 600 "$APP_DIR/.env" "$RELEASE_DIR/.env"
             fi
 
+            sudo install -m 0755 "$RELEASE_DIR/ops/notify-deploy.sh" /usr/local/bin/financas-deploy-notify
             chmod 0755 "$RELEASE_DIR/ops/deploy-vps.sh"
             PROJECT_DIR="$RELEASE_DIR" \
             COMPOSE_PROJECT_NAME=finan-as \
@@ -124,21 +125,17 @@ jobs:
     needs: [test, deploy]
 
     steps:
-      - name: Send Success Message to Hermes
-        env:
-          HERMES_BOT_TOKEN: ${{ secrets.HERMES_BOT_TOKEN }}
-          HERMES_CHAT_ID: ${{ secrets.HERMES_CHAT_ID }}
-        run: |
-          SHORT_SHA="${GITHUB_SHA::7}"
-          printf -v MESSAGE '%s\n\n%s\n\n%s' \
-            '✅ Implantação concluída, senhor.' \
-            "A versão ${SHORT_SHA} foi publicada e passou por todas as verificações de saúde. O sistema financeiro está operacional e sob monitoramento contínuo." \
-            '— J.A.R.V.I.S.'
-
-          curl --fail --silent --show-error \
-            -X POST "https://api.telegram.org/bot${HERMES_BOT_TOKEN}/sendMessage" \
-            -d chat_id="${HERMES_CHAT_ID}" \
-            --data-urlencode text="${MESSAGE}"
+      - name: Send Success Message through VPS
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            sudo /usr/local/bin/financas-deploy-notify \
+              success \
+              "${{ github.sha }}" \
+              "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
   alert_hermes_failure:
     name: Alert Hermes on Failure
@@ -147,20 +144,14 @@ jobs:
     needs: [test, deploy]
 
     steps:
-      - name: Send Webhook to Hermes
-        env:
-          HERMES_BOT_TOKEN: ${{ secrets.HERMES_BOT_TOKEN }}
-          HERMES_CHAT_ID: ${{ secrets.HERMES_CHAT_ID }}
-        run: |
-          SHORT_SHA="${GITHUB_SHA::7}"
-          RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          printf -v MESSAGE '%s\n\n%s\n\n%s\n\n%s' \
-            "🚨 Senhor, interrompi a implantação da versão ${SHORT_SHA}." \
-            'Uma das verificações de segurança falhou. A versão que já estava funcionando foi preservada ou o rollback automático foi acionado.' \
-            "Detalhes: ${RUN_URL}" \
-            '— J.A.R.V.I.S.'
-
-          curl --fail --silent --show-error \
-            -X POST "https://api.telegram.org/bot${HERMES_BOT_TOKEN}/sendMessage" \
-            -d chat_id="${HERMES_CHAT_ID}" \
-            --data-urlencode text="${MESSAGE}"
+      - name: Send Failure Message through VPS
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            sudo /usr/local/bin/financas-deploy-notify \
+              failure \
+              "${{ github.sha }}" \
+              "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
