@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from app_logging import log_internal_error
 from database import get_db
 from models import Receita, Cartao
 from schemas.receitas import ReceitaBase
@@ -32,6 +33,7 @@ def criar_receita(receita_in: ReceitaBase, db: Session = Depends(get_db)):
         raise
     except Exception:
         db.rollback()
+        log_internal_error("criar_receita")
         raise HTTPException(status_code=500, detail='Erro ao criar receita')
 
 @router.get('/')
@@ -39,6 +41,7 @@ def listar_receitas(db: Session = Depends(get_db)):
     try:
         return db.query(Receita).all()
     except Exception:
+        log_internal_error("listar_receitas")
         raise HTTPException(status_code=500, detail='Erro ao listar receitas')
 
 @router.get('/{id}')
@@ -51,6 +54,7 @@ def buscar_receita(id: int, db: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception:
+        log_internal_error("buscar_receita")
         raise HTTPException(status_code=500, detail='Erro ao buscar receita')
 
 @router.put('/{id}')
@@ -96,6 +100,7 @@ def atualizar_receita(id: int, receita_in: ReceitaBase, db: Session = Depends(ge
         raise
     except Exception:
         db.rollback()
+        log_internal_error("atualizar_receita")
         raise HTTPException(status_code=500, detail='Erro ao atualizar receita')
 
 @router.delete('/{id}')
@@ -122,4 +127,5 @@ def deletar_receita(id: int, db: Session = Depends(get_db)):
         raise
     except Exception:
         db.rollback()
+        log_internal_error("deletar_receita")
         raise HTTPException(status_code=500, detail='Erro ao deletar receita')

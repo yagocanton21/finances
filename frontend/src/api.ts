@@ -17,6 +17,10 @@ export async function apiRequest<T>(
         message = body.detail.map(item => item.msg).filter(Boolean).join(', ');
       }
     }
+    const requestId = response.headers.get('X-Request-ID');
+    if (response.status >= 500 && requestId) {
+      message += ` (ID: ${requestId})`;
+    }
     throw new Error(message);
   }
 

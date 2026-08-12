@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import extract
 from sqlalchemy.orm import Session
 
+from app_logging import log_internal_error
 from database import get_db
 from models import AporteReserva, Cartao
 from schemas.aportes_reserva import AporteReservaBase
@@ -38,6 +39,7 @@ def criar_aporte(aporte_in: AporteReservaBase, db: Session = Depends(get_db)):
         raise
     except Exception:
         db.rollback()
+        log_internal_error("registrar_aporte")
         raise HTTPException(status_code=500, detail="Erro ao registrar aporte")
 
 
@@ -78,4 +80,5 @@ def deletar_aporte(id: int, db: Session = Depends(get_db)):
         raise
     except Exception:
         db.rollback()
+        log_internal_error("remover_aporte")
         raise HTTPException(status_code=500, detail="Erro ao remover aporte")

@@ -67,6 +67,12 @@ class ApiFinanceiraIntegrationTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
 
+    def test_request_id_e_propagado_na_resposta(self):
+        response = self.client.get("/", headers={"X-Request-ID": "integracao-123"})
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.headers["X-Request-ID"], "integracao-123")
+
     def test_compra_parcelada_cria_parcelas_estruturadas(self):
         cartao = self.criar_cartao()
         primeira = self.criar_gasto(cartao["id"], valor="300.00", parcelas=3)

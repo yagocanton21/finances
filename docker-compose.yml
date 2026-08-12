@@ -45,7 +45,7 @@ services:
     restart: unless-stopped
     build: .
     container_name: financas_api
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2 --no-access-log
     ports:
       - "127.0.0.1:8000:8000"
     environment:
@@ -56,6 +56,7 @@ services:
       POSTGRES_PORT: 5432
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       HERMES_API_TOKEN: ${HERMES_API_TOKEN:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       postgres:
         condition: service_healthy

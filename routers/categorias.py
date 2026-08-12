@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from app_logging import log_internal_error
 from database import get_db
 from models import Categoria
 from schemas import CategoriaBase
@@ -15,16 +16,18 @@ def criar_categoria(categoria_in: CategoriaBase, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(db_categoria)
         return db_categoria
-    except Exception as e:
+    except Exception:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f'Erro ao criar categoria: {str(e)}')
+        log_internal_error("criar_categoria")
+        raise HTTPException(status_code=500, detail='Erro ao criar categoria')
 
 @router.get('/')
 def listar_categorias(db: Session = Depends(get_db)):
     try:
         return db.query(Categoria).all()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Erro ao listar categorias: {str(e)}')
+    except Exception:
+        log_internal_error("listar_categorias")
+        raise HTTPException(status_code=500, detail='Erro ao listar categorias')
 
 @router.get('/{id}')
 def buscar_categoria(id: int, db: Session = Depends(get_db)):
@@ -35,8 +38,9 @@ def buscar_categoria(id: int, db: Session = Depends(get_db)):
         return db_categoria
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Erro ao buscar categoria: {str(e)}')
+    except Exception:
+        log_internal_error("buscar_categoria")
+        raise HTTPException(status_code=500, detail='Erro ao buscar categoria')
 
 @router.put('/{id}')
 def atualizar_categoria(id: int, categoria_in: CategoriaBase, db: Session = Depends(get_db)):
@@ -52,9 +56,10 @@ def atualizar_categoria(id: int, categoria_in: CategoriaBase, db: Session = Depe
         return db_categoria
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f'Erro ao atualizar categoria: {str(e)}')
+        log_internal_error("atualizar_categoria")
+        raise HTTPException(status_code=500, detail='Erro ao atualizar categoria')
 
 @router.delete('/{id}')
 def deletar_categoria(id: int, db: Session = Depends(get_db)):
@@ -68,6 +73,7 @@ def deletar_categoria(id: int, db: Session = Depends(get_db)):
         return {'mensagem': 'Categoria deletada com sucesso'}
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f'Erro ao deletar categoria: {str(e)}')
+        log_internal_error("deletar_categoria")
+        raise HTTPException(status_code=500, detail='Erro ao deletar categoria')

@@ -12,6 +12,7 @@ from sqlalchemy import extract, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app_logging import log_internal_error
 from database import get_db
 import pytz
 
@@ -293,6 +294,7 @@ def registrar_lancamento(
         raise HTTPException(status_code=409, detail="Chave de idempotencia em conflito")
     except Exception:
         db.rollback()
+        log_internal_error("registrar_lancamento_agente")
         raise HTTPException(status_code=500, detail="Erro ao registrar lancamento do agente")
 
 
@@ -538,4 +540,5 @@ def estornar_lancamento(
         raise
     except Exception:
         db.rollback()
+        log_internal_error("estornar_lancamento_agente")
         raise HTTPException(status_code=500, detail="Erro ao estornar lancamento do agente")

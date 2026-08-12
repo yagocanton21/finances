@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import extract
 from sqlalchemy.orm import Session
 
+from app_logging import log_internal_error
 from database import get_db
 from models import Cartao, GastoDiario
 from schemas import GastoDiarioBase
@@ -104,6 +105,7 @@ def criar_gasto_diario(
         raise
     except Exception:
         db.rollback()
+        log_internal_error("criar_gasto_diario")
         raise HTTPException(status_code=500, detail="Erro ao criar gasto diario")
 
 
@@ -174,6 +176,7 @@ def conciliar_pagamento(
         raise
     except Exception:
         db.rollback()
+        log_internal_error("conciliar_pagamento")
         raise HTTPException(status_code=500, detail="Erro ao conciliar pagamento")
 
 
@@ -225,6 +228,7 @@ def atualizar_gasto_diario(
         raise
     except Exception:
         db.rollback()
+        log_internal_error("atualizar_gasto_diario")
         raise HTTPException(status_code=500, detail="Erro ao atualizar gasto diario")
 
 
@@ -285,6 +289,7 @@ def editar_gasto_diario(
         raise
     except Exception:
         db.rollback()
+        log_internal_error("editar_gasto_diario")
         raise HTTPException(status_code=500, detail="Erro ao editar gasto diario")
 
 
@@ -328,4 +333,5 @@ def deletar_gasto_diario(id: int, db: Session = Depends(get_db)):
         raise
     except Exception:
         db.rollback()
+        log_internal_error("deletar_gasto_diario")
         raise HTTPException(status_code=500, detail="Erro ao deletar gasto diario")

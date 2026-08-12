@@ -6,6 +6,7 @@ import pytz
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app_logging import log_internal_error
 from database import get_db
 from models import Cartao, Fatura, GastoDiario
 from schemas import CartaoBase
@@ -46,6 +47,7 @@ def criar_cartao(cartao_in: CartaoBase, db: Session = Depends(get_db)):
         return cartao
     except Exception:
         db.rollback()
+        log_internal_error("criar_cartao")
         raise HTTPException(status_code=500, detail="Erro ao criar cartao")
 
 
@@ -109,6 +111,7 @@ def atualizar_cartao(
         raise
     except Exception:
         db.rollback()
+        log_internal_error("atualizar_cartao")
         raise HTTPException(status_code=500, detail="Erro ao atualizar cartao")
 
 
@@ -127,6 +130,7 @@ def deletar_cartao(id: int, db: Session = Depends(get_db)):
         raise
     except Exception:
         db.rollback()
+        log_internal_error("deletar_cartao")
         raise HTTPException(status_code=500, detail="Erro ao deletar cartao")
 
 
@@ -169,6 +173,7 @@ def pagar_fatura(
         raise
     except Exception:
         db.rollback()
+        log_internal_error("pagar_fatura")
         raise HTTPException(status_code=500, detail="Erro ao pagar fatura")
 
 

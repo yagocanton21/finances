@@ -102,3 +102,16 @@ CONFIRM_RESTORE=YES AGE_IDENTITY=/caminho/backup.age \
 
 Faça a restauração em uma instância/banco de teste primeiro. O teste automático já foi
 executado com sucesso em um container temporário na VPS3.
+
+## Monitor externo da API
+
+O monitor deve ser instalado em outro host para continuar detectando falhas quando a
+VPS da aplicação estiver totalmente indisponível. Ele consulta `/api/health` a cada
+cinco minutos, alerta depois de duas falhas consecutivas e envia uma mensagem de
+recuperação quando o serviço volta.
+
+Na máquina de monitoramento, instale `ops/monitor-api.sh` em
+`/usr/local/bin/financas-api-monitor.sh`, copie as unidades
+`financas-api-monitor.service` e `financas-api-monitor.timer` para
+`/etc/systemd/system/` e crie `/etc/financas-api-monitor.env` a partir do exemplo.
+O serviço reutiliza `TELEGRAM_BOT_TOKEN` e `TELEGRAM_ALLOWED_USERS` do Hermes.
