@@ -19,7 +19,8 @@ e depois `POST /agent/v1/pagamentos/fatura` com `confirmado: true`.
 
 Quando o usuário disser que já pagou diretamente no banco ou no cartão, use
 `POST /agent/v1/pagamentos/fatura/reconciliar`. Essa operação registra o histórico
-e marca as parcelas cobertas sem debitar novamente o saldo.
+e marca as parcelas cobertas sem debitar novamente o saldo, mas restaura o valor
+pago no limite disponível do cartão.
 
 ## Fluxo recomendado
 

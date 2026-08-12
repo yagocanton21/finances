@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import Modal from './components/Modal'
 import GastosList from './components/GastosList'
 import { apiRequest } from './api'
+import { todayCivilInput } from './civilDate'
 
 interface Cartao {
   id: number;
@@ -356,7 +357,7 @@ function App() {
           </div>
           <div className="form-group">
             <label>Data de Recebimento</label>
-            <input name="data" type="date" className="form-input" defaultValue={new Date().toISOString().split('T')[0]} required />
+            <input name="data" type="date" className="form-input" defaultValue={todayCivilInput()} required />
           </div>
           <div className="form-group">
             <label>Em qual conta entrou?</label>
@@ -389,7 +390,7 @@ function App() {
           </div>
           <div className="form-group">
             <label>Data da Compra</label>
-            <input name="data" type="date" className="form-input" defaultValue={new Date().toISOString().split('T')[0]} required />
+            <input name="data" type="date" className="form-input" defaultValue={todayCivilInput()} required />
           </div>
           <div className="form-group">
             <label>Forma de Pagamento</label>
@@ -433,7 +434,7 @@ function App() {
           </div>
           <div className="form-group">
             <label>Data</label>
-            <input name="data" type="date" className="form-input" defaultValue={new Date().toISOString().split('T')[0]} required />
+            <input name="data" type="date" className="form-input" defaultValue={todayCivilInput()} required />
           </div>
           <div className="form-group">
             <label>Retirar de qual conta?</label>

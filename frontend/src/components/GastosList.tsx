@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import Modal from './Modal'
 import { apiRequest } from '../api'
+import { parseCivilDate } from '../civilDate'
 
 interface Gasto {
   id: number;
@@ -69,7 +70,7 @@ const moneyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', curre
 const formatMoney = (value: number) => moneyFormatter.format(value);
 
 const formatDate = (dateStr: string) => {
-  const d = new Date(dateStr)
+  const d = parseCivilDate(dateStr)
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')
 }
 
@@ -87,7 +88,7 @@ const referenciaFatura = (data: Date, diaFechamento: number) => {
 }
 
 const pertenceAoMesDaFatura = (gasto: Gasto, cartao: Cartao | undefined, mes: number, ano: number) => {
-  const data = new Date(gasto.data)
+  const data = parseCivilDate(gasto.data)
   const diaFechamento = cartao?.data_fatura || 15
   const referencia = referenciaFatura(data, diaFechamento)
   return referencia.mes === mes && referencia.ano === ano
@@ -193,11 +194,11 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
           const cartao = cartoesDoPerfil.find(c => c.id === g.cartao_id)
           return pertenceAoMesDaFatura(g, cartao, mesAtual, anoAtual)
         }
-        const d = new Date(g.data)
+        const d = parseCivilDate(g.data)
         return d.getMonth() === mesAtual && d.getFullYear() === anoAtual
       })
       .sort((a, b) => {
-        const diff = new Date(b.data).getTime() - new Date(a.data).getTime();
+        const diff = parseCivilDate(b.data).getTime() - parseCivilDate(a.data).getTime();
         return diff !== 0 ? diff : b.id - a.id;
       }),
     [gastos, cartaoIds, cartoesDoPerfil, mesAtual, anoAtual, viewMode]
@@ -207,7 +208,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
     gastos
       .filter(g => cartaoIds.has(g.cartao_id) && g.tipo_pagamento.toLowerCase() === 'credito' && !g.pago)
       .reduce((acc, g) => {
-        const d = new Date(g.data)
+        const d = parseCivilDate(g.data)
         const cartao = cartoesDoPerfil.find(c => c.id === g.cartao_id)
         const diaFechamento = cartao?.data_fatura || 15
         const referencia = referenciaFatura(d, diaFechamento)
@@ -233,7 +234,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
   const gastosPorDia = useMemo(() => {
     const agrupado: Record<string, Gasto[]> = {}
     for (const g of gastosFiltrados) {
-      const dia = new Date(g.data).toLocaleDateString('pt-BR')
+      const dia = parseCivilDate(g.data).toLocaleDateString('pt-BR')
       if (!agrupado[dia]) agrupado[dia] = []
       agrupado[dia].push(g)
     }
@@ -251,7 +252,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
   }), [anoAtual, mesAtual])
 
   const diasComGasto = useMemo(
-    () => new Set(gastosFiltrados.map(g => new Date(g.data).getDate())),
+    () => new Set(gastosFiltrados.map(g => parseCivilDate(g.data).getDate())),
     [gastosFiltrados]
   )
 
@@ -313,7 +314,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
         return (ma ? parseInt(ma[1]) : 0) - (mb ? parseInt(mb[1]) : 0)
       })
 
-    const dataInicio = new Date(parcelasRelacionadas[0]?.data || gasto.data)
+    const dataInicio = parseCivilDate(parcelasRelacionadas[0]?.data || gasto.data)
     const dataFim = new Date(dataInicio)
     dataFim.setMonth(dataFim.getMonth() + totalParcelas - 1)
 
@@ -530,7 +531,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
             {/* Timeline de Parcelas */}
             <div className="parcelas-timeline">
               {parcelasInfo.parcelasRelacionadas.map((p, i) => {
-                const dataParcela = new Date(p.data)
+                const dataParcela = parseCivilDate(p.data)
                 const isPaga = Boolean(p.pago)
                 return (
                   <div key={p.id} className={`timeline-item ${isPaga ? 'paga' : 'pendente'}`}>

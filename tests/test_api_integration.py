@@ -214,6 +214,8 @@ class ApiFinanceiraIntegrationTest(unittest.TestCase):
         )
         self.assertEqual(reconciliado.status_code, 200, reconciliado.text)
         self.assertFalse(reconciliado.json()["movimentou_saldo"])
+        self.assertEqual(Decimal(reconciliado.json()["novo_saldo"]), Decimal("500.00"))
+        self.assertEqual(Decimal(reconciliado.json()["novo_limite"]), Decimal("950.00"))
 
         gasto_atualizado = self.client.get(f"/gastos_diarios/{primeira['id']}")
         self.assertEqual(gasto_atualizado.status_code, 200, gasto_atualizado.text)
@@ -231,6 +233,11 @@ class ApiFinanceiraIntegrationTest(unittest.TestCase):
         )
         self.assertEqual(repetido.status_code, 200, repetido.text)
         self.assertTrue(repetido.json()["idempotente"])
+
+        cartao_atualizado = self.client.get(f"/cartoes/{cartao['id']}")
+        self.assertEqual(cartao_atualizado.status_code, 200, cartao_atualizado.text)
+        self.assertEqual(Decimal(cartao_atualizado.json()["saldo"]), Decimal("500.00"))
+        self.assertEqual(Decimal(cartao_atualizado.json()["limite"]), Decimal("950.00"))
 
     def test_operacao_rejeita_limite_insuficiente_sem_criar_gasto(self):
         cartao = self.criar_cartao(saldo="500.00", limite="50.00")

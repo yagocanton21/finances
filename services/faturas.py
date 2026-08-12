@@ -66,6 +66,19 @@ def _marcar_parcelas_cobertas(gastos, valor_pago: Decimal) -> None:
         gasto.pago = acumulado <= valor_pago
 
 
+def _aplicar_pagamento_cartao(
+    cartao: Cartao,
+    valor_pagamento: Decimal,
+    *,
+    movimentar_saldo: bool,
+    restaurar_limite: bool,
+) -> None:
+    if movimentar_saldo:
+        cartao.saldo -= valor_pagamento
+    if restaurar_limite:
+        cartao.limite += valor_pagamento
+
+
 def processar_pagamento_fatura(
     db: Session,
     *,
@@ -76,8 +89,12 @@ def processar_pagamento_fatura(
     idempotency_key: Optional[str] = None,
     origem: str = "sistema",
     movimentar_saldo: bool = True,
+    restaurar_limite: Optional[bool] = None,
     agora: Optional[datetime] = None,
 ):
+    if restaurar_limite is None:
+        restaurar_limite = movimentar_saldo
+
     cartao = (
         db.query(Cartao)
         .filter(Cartao.id == cartao_id, Cartao.ativo.is_(True))
@@ -155,9 +172,12 @@ def processar_pagamento_fatura(
     if movimentar_saldo and cartao.saldo < valor_pagamento:
         raise HTTPException(status_code=409, detail="Saldo insuficiente")
 
-    if movimentar_saldo:
-        cartao.saldo -= valor_pagamento
-        cartao.limite += valor_pagamento
+    _aplicar_pagamento_cartao(
+        cartao,
+        valor_pagamento,
+        movimentar_saldo=movimentar_saldo,
+        restaurar_limite=restaurar_limite,
+    )
 
     novo_saldo_restante = saldo_restante - valor_pagamento
     situacao = "total" if novo_saldo_restante == 0 else "parcial"

@@ -16,10 +16,26 @@ from schemas.gastos_diarios import ConciliarPagamentoIn, GastoDiarioBase, GastoD
 from schemas.cartoes import PagarFaturaIn
 from schemas.agente import LancamentoAgenteIn
 from routers.agente import _mesma_requisicao, _normalizar_requisicao
+from services.faturas import _aplicar_pagamento_cartao
 from fastapi import HTTPException
 
 
 class RegrasFinanceirasTest(unittest.TestCase):
+    def test_reconciliacao_restaura_limite_sem_movimentar_saldo(self):
+        cartao = SimpleNamespace(
+            saldo=Decimal("500.00"), limite=Decimal("900.00")
+        )
+
+        _aplicar_pagamento_cartao(
+            cartao,
+            Decimal("50.00"),
+            movimentar_saldo=False,
+            restaurar_limite=True,
+        )
+
+        self.assertEqual(cartao.saldo, Decimal("500.00"))
+        self.assertEqual(cartao.limite, Decimal("950.00"))
+
     def test_compra_apos_fechamento_vai_para_mes_seguinte(self):
         gasto = SimpleNamespace(
             data=datetime(2026, 7, 16), valor=Decimal("100.00")

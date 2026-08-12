@@ -26,7 +26,37 @@ ser considerado bem-sucedido.
 Por padrão, `BACKUP_REMOTE` é obrigatório; use `REQUIRE_REMOTE=false` somente em um
 ambiente de homologação.
 
-## Execução duas vezes por semana
+## Recuperação do Google Drive e dos alertas
+
+Quando o remote `gdrive:` retornar `unauthorized_client`, reconecte-o de forma
+interativa com o mesmo usuário que executa o backup e valide a pasta antes de
+considerar a cópia externa saudável:
+
+```bash
+sudo rclone config reconnect gdrive: --config /root/.config/rclone/rclone.conf
+sudo rclone lsd gdrive:Backups --config /root/.config/rclone/rclone.conf
+```
+
+Em `/etc/financas/backup.env`, configure `BACKUP_REMOTE=gdrive:Backups`,
+`REQUIRE_REMOTE=true`, `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`. Teste o alerta
+sem provocar uma falha de backup:
+
+```bash
+sudo bash -lc 'set -a; source /etc/financas/backup.env; set +a; bash /home/ubuntu/finan-as/ops/test-telegram-alert.sh'
+```
+
+Depois, execute uma cópia completa e confira o estado da unidade:
+
+```bash
+sudo systemctl start financas-backup.service
+sudo systemctl status financas-backup.service
+```
+
+As mesmas credenciais do Telegram são usadas pelo teste automático de
+restauração. Qualquer falha na criação, no envio externo ou na restauração de
+teste gera um alerta para o chat configurado.
+
+## Execução semanal
 
 Os arquivos `systemd/` podem ser instalados no host Linux:
 
@@ -36,13 +66,13 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now financas-backup.timer financas-backup-verify.timer
 ```
 
-O agendamento atual é segunda e quinta às 02:15 UTC (23:15 em Brasília). O teste de
-restauração ocorre às 02:45 UTC (23:45 em Brasília).
+O agendamento atual é quinta-feira às 02:15 UTC (quarta-feira às 23:15 em
+Brasília). O teste de restauração ocorre às 02:45 UTC (23:45 em Brasília).
 
 Para uma instalação simples via cron, após testar manualmente:
 
 ```cron
-15 2 * * 1,4 cd /home/ubuntu/finan-as && /home/ubuntu/finan-as/ops/backup-postgres.sh >> /var/log/financas-backup.log 2>&1
+15 2 * * 4 cd /home/ubuntu/finan-as && /home/ubuntu/finan-as/ops/backup-postgres.sh >> /var/log/financas-backup.log 2>&1
 ```
 
 O script mantém 14 dias diários, 8 semanas e 12 meses por padrão. As cópias são

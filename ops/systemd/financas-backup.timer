@@ -1,8 +1,8 @@
 [Unit]
-Description=Agendamento diário do backup de Financas
+Description=Agendamento semanal do backup de Financas
 
 [Timer]
-OnCalendar=Mon,Thu *-*-* 02:15:00 UTC
+OnCalendar=Thu *-*-* 02:15:00 UTC
 Persistent=true
 Unit=financas-backup.service
 

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Cartao, Fatura, GastoDiario, PagamentoFatura
+from models import Cartao, Fatura, GastoDiario
 from schemas import CartaoBase
 from schemas.cartoes import PagarFaturaIn
 from services.faturas import (
@@ -34,22 +34,6 @@ def _calcular_fatura_do_mes(
         )),
         Decimal("0"),
     )
-
-
-def _pagamento_resposta(cartao: Cartao, fatura: Fatura, pagamento: PagamentoFatura):
-    total_pago = sum((item.valor for item in fatura.pagamentos), Decimal("0"))
-    saldo_restante = max(fatura.total - total_pago, Decimal("0"))
-    return {
-        "mensagem": "Fatura paga com sucesso",
-        "pagamento_id": pagamento.id,
-        "valor_pago": pagamento.valor,
-        "situacao": pagamento.situacao,
-        "mes_ref": fatura.mes_ref,
-        "ano_ref": fatura.ano_ref,
-        "saldo_restante": saldo_restante,
-        "novo_saldo": cartao.saldo,
-        "novo_limite": cartao.limite,
-    }
 
 
 @router.post("/")
@@ -180,108 +164,6 @@ def pagar_fatura(
         )
         db.commit()
         return resposta
-
-        gastos = db.query(GastoDiario).filter(
-            GastoDiario.cartao_id == cartao.id,
-            GastoDiario.tipo_pagamento == "credito",
-            GastoDiario.pago.is_(False),
-        ).with_for_update().all()
-        gastos_da_fatura = [
-            gasto for gasto in gastos
-            if _pertence_a_fatura(
-                gasto, cartao.data_fatura, mes_ref, ano_ref
-            )
-        ]
-        soma_fatura = sum(
-            (gasto.valor for gasto in gastos_da_fatura), Decimal("0")
-        )
-        fatura = (
-            db.query(Fatura)
-            .filter(
-                Fatura.cartao_id == cartao.id,
-                Fatura.mes_ref == mes_ref,
-                Fatura.ano_ref == ano_ref,
-            )
-            .with_for_update()
-            .first()
-        )
-
-        if pagamento and pagamento.idempotency_key:
-            pagamento_anterior = (
-                db.query(PagamentoFatura)
-                .filter(
-                    PagamentoFatura.cartao_id == cartao.id,
-                    PagamentoFatura.idempotency_key == pagamento.idempotency_key,
-                )
-                .first()
-            )
-            if pagamento_anterior:
-                return _pagamento_resposta(
-                    cartao, pagamento_anterior.fatura, pagamento_anterior
-                )
-
-        if fatura is None:
-            if soma_fatura <= 0:
-                raise HTTPException(status_code=409, detail="Nao ha fatura em aberto")
-            fatura = Fatura(
-                cartao_id=cartao.id,
-                mes_ref=mes_ref,
-                ano_ref=ano_ref,
-                total=soma_fatura,
-                situacao="aberta",
-                criada_em=hoje,
-            )
-            db.add(fatura)
-            db.flush()
-        else:
-            # O total pode crescer se uma nova parcela for lançada na mesma
-            # competência. Nunca reduzimos o total histórico da fatura.
-            fatura.total = max(fatura.total, soma_fatura)
-
-        total_pago = sum((item.valor for item in fatura.pagamentos), Decimal("0"))
-        saldo_restante = fatura.total - total_pago
-        if saldo_restante <= 0:
-            raise HTTPException(status_code=409, detail="Nao ha fatura em aberto")
-
-        valor_fatura = saldo_restante
-        if pagamento and pagamento.valor is not None:
-            if pagamento.valor > saldo_restante:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Valor informado ({pagamento.valor}) excede o saldo restante ({saldo_restante})",
-                )
-            valor_fatura = pagamento.valor
-
-        if cartao.saldo < valor_fatura:
-            raise HTTPException(status_code=409, detail="Saldo insuficiente")
-
-        cartao.saldo -= valor_fatura
-        cartao.limite += valor_fatura
-        novo_saldo_restante = saldo_restante - valor_fatura
-        situacao = "total" if novo_saldo_restante == 0 else "parcial"
-        fatura.situacao = "paga" if situacao == "total" else "parcial"
-        pagamento_registrado = PagamentoFatura(
-            fatura=fatura,
-            cartao=cartao,
-            mes_ref=mes_ref,
-            ano_ref=ano_ref,
-            valor=valor_fatura,
-            data_pagamento=hoje,
-            situacao=situacao,
-            idempotency_key=pagamento.idempotency_key if pagamento else None,
-        )
-        db.add(pagamento_registrado)
-
-        # Marca gastos como pagos (somente se pagou o total)
-        if situacao == "total":
-            for gasto in gastos_da_fatura:
-                gasto.pago = True
-
-        db.commit()
-        db.refresh(cartao)
-        db.refresh(fatura)
-        db.refresh(pagamento_registrado)
-        return _pagamento_resposta(cartao, fatura, pagamento_registrado)
     except HTTPException:
         db.rollback()
         raise

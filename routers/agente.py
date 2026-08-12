@@ -407,6 +407,7 @@ def _registrar_pagamento_agente(
         idempotency_key=external_id,
         origem=origem,
         movimentar_saldo=movimentar_saldo,
+        restaurar_limite=True,
         agora=hoje,
     )
     resposta.update({"agente": agente, "external_id": external_id})
@@ -456,7 +457,7 @@ def reconciliar_pagamento_fatura_pelo_agente(
     idempotency_key: Annotated[Optional[str], Header(alias="Idempotency-Key")] = None,
     db: Session = Depends(get_db),
 ):
-    """Registra pagamento já feito no banco/cartão sem debitar novamente o saldo."""
+    """Registra pagamento externo, preserva o saldo e restaura o limite do cartão."""
     try:
         return _registrar_pagamento_agente(
             entrada,
