@@ -35,16 +35,21 @@ send_alert() {
     local message="$1"
     if [[ "$MONITOR_DRY_RUN" == "true" ]]; then
         printf 'dry_run_alert=%s\n' "$message"
-        return
+        return 0
     fi
     if [[ -z "$TELEGRAM_BOT_TOKEN" || -z "$TELEGRAM_CHAT_ID" ]]; then
         echo "monitor_alert=not_configured" >&2
-        return
+        return 1
     fi
-    curl --fail --silent --show-error \
+    if curl --fail --silent --show-error \
         -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
         -d "chat_id=${TELEGRAM_CHAT_ID}" \
-        --data-urlencode "text=${message}" >/dev/null || true
+        --data-urlencode "text=${message}" >/dev/null; then
+        echo "monitor_alert=sent"
+        return 0
+    fi
+    echo "monitor_alert=failed" >&2
+    return 1
 }
 
 if curl --fail --silent --show-error \
@@ -52,7 +57,11 @@ if curl --fail --silent --show-error \
     --output /dev/null \
     "$API_HEALTH_URL"; then
     if [[ "$previous_status" == "down" ]]; then
-        send_alert "RECUPERADO: ${MONITOR_NAME} voltou a responder em ${API_HEALTH_URL}."
+        if ! send_alert "RECUPERADO: ${MONITOR_NAME} voltou a responder em ${API_HEALTH_URL}."; then
+            save_state "down" 0
+            echo "monitor_status=recovery_alert_pending url=$API_HEALTH_URL" >&2
+            exit 1
+        fi
     fi
     save_state "up" 0
     echo "monitor_status=up url=$API_HEALTH_URL"
@@ -62,9 +71,12 @@ fi
 failures=$((failures + 1))
 next_status="failing"
 if (( failures >= FAIL_THRESHOLD )); then
-    next_status="down"
-    if [[ "$previous_status" != "down" ]]; then
-        send_alert "ALERTA: ${MONITOR_NAME} esta indisponivel apos ${failures} verificacoes consecutivas (${API_HEALTH_URL})."
+    if [[ "$previous_status" == "down" ]]; then
+        next_status="down"
+    elif send_alert "ALERTA: ${MONITOR_NAME} esta indisponivel apos ${failures} verificacoes consecutivas (${API_HEALTH_URL})."; then
+        next_status="down"
+    else
+        next_status="failing"
     fi
 fi
 save_state "$next_status" "$failures"
