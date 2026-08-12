@@ -57,7 +57,11 @@ if curl --fail --silent --show-error \
     --output /dev/null \
     "$API_HEALTH_URL"; then
     if [[ "$previous_status" == "down" ]]; then
-        if ! send_alert "RECUPERADO: ${MONITOR_NAME} voltou a responder em ${API_HEALTH_URL}."; then
+        if ! send_alert "✅ Boas notícias, senhor. O sistema financeiro está operacional novamente.
+
+A API respondeu normalmente e o acesso foi restabelecido. O monitoramento contínuo permanece ativo.
+
+— J.A.R.V.I.S."; then
             save_state "down" 0
             echo "monitor_status=recovery_alert_pending url=$API_HEALTH_URL" >&2
             exit 1
@@ -73,7 +77,13 @@ next_status="failing"
 if (( failures >= FAIL_THRESHOLD )); then
     if [[ "$previous_status" == "down" ]]; then
         next_status="down"
-    elif send_alert "ALERTA: ${MONITOR_NAME} esta indisponivel apos ${failures} verificacoes consecutivas (${API_HEALTH_URL})."; then
+    elif send_alert "🚨 Senhor, detectei uma interrupção no sistema financeiro.
+
+A API deixou de responder após ${failures} verificações consecutivas. O acesso pode estar temporariamente indisponível.
+
+Continuarei monitorando e avisarei assim que tudo estiver normalizado.
+
+— J.A.R.V.I.S."; then
         next_status="down"
     else
         next_status="failing"
