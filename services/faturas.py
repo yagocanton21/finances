@@ -9,16 +9,30 @@ from sqlalchemy.orm import Session
 from models import Cartao, Fatura, GastoDiario, PagamentoFatura
 
 
+def _avancar_mes(mes: int, ano: int, quantidade: int) -> tuple[int, int]:
+    indice = ano * 12 + mes - 1 + quantidade
+    return indice % 12 + 1, indice // 12
+
+
+def referencia_fatura(data: datetime, dia_fechamento: int) -> tuple[int, int]:
+    """Retorna o mes de vencimento da fatura que contem o lancamento.
+
+    Ex.: com fechamento no dia 28, a fatura de setembro cobre 28/07 a 27/08.
+    """
+    meses_a_frente = 2 if data.day >= dia_fechamento else 1
+    return _avancar_mes(data.month, data.year, meses_a_frente)
+
+
+def referencia_fatura_atual(agora: datetime, dia_fechamento: int) -> tuple[int, int]:
+    """Retorna a competencia da proxima fatura em formacao."""
+    meses_a_frente = 2 if agora.day >= dia_fechamento else 1
+    return _avancar_mes(agora.month, agora.year, meses_a_frente)
+
+
 def pertence_a_fatura(
     gasto: GastoDiario, dia_fechamento: int, mes_ref: int, ano_ref: int
 ) -> bool:
-    mes_fatura = gasto.data.month
-    ano_fatura = gasto.data.year
-    if gasto.data.day >= dia_fechamento:
-        mes_fatura += 1
-        if mes_fatura > 12:
-            mes_fatura = 1
-            ano_fatura += 1
+    mes_fatura, ano_fatura = referencia_fatura(gasto.data, dia_fechamento)
     return mes_fatura == mes_ref and ano_fatura == ano_ref
 
 

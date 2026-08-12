@@ -120,7 +120,7 @@ class ApiFinanceiraIntegrationTest(unittest.TestCase):
 
         response = self.client.post(
             f"/cartoes/{cartao['id']}/pagar_fatura",
-            json={"mes_ref": 7, "ano_ref": 2026},
+            json={"mes_ref": 8, "ano_ref": 2026},
         )
         self.assertEqual(response.status_code, 200, response.text)
         corpo = response.json()
@@ -143,7 +143,7 @@ class ApiFinanceiraIntegrationTest(unittest.TestCase):
 
         response = self.client.post(
             f"/cartoes/{cartao['id']}/pagar_fatura",
-            json={"valor": "50.00", "mes_ref": 7, "ano_ref": 2026},
+            json={"valor": "50.00", "mes_ref": 8, "ano_ref": 2026},
         )
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(Decimal(response.json()["valor_pago"]), Decimal("50.00"))
@@ -154,14 +154,14 @@ class ApiFinanceiraIntegrationTest(unittest.TestCase):
 
         segunda = self.client.post(
             f"/cartoes/{cartao['id']}/pagar_fatura",
-            json={"valor": "75.50", "mes_ref": 7, "ano_ref": 2026},
+            json={"valor": "75.50", "mes_ref": 8, "ano_ref": 2026},
         )
         self.assertEqual(segunda.status_code, 200, segunda.text)
         self.assertEqual(Decimal(segunda.json()["saldo_restante"]), Decimal("0.00"))
 
         excesso = self.client.post(
             f"/cartoes/{cartao['id']}/pagar_fatura",
-            json={"mes_ref": 7, "ano_ref": 2026},
+            json={"mes_ref": 8, "ano_ref": 2026},
         )
         self.assertEqual(excesso.status_code, 409, excesso.text)
 
@@ -170,7 +170,7 @@ class ApiFinanceiraIntegrationTest(unittest.TestCase):
         self.criar_gasto(cartao["id"], valor="125.50", data="2026-07-10T12:00:00")
         payload = {
             "valor": "50.00",
-            "mes_ref": 7,
+            "mes_ref": 8,
             "ano_ref": 2026,
             "idempotency_key": "pagamento-teste-1",
         }
@@ -196,7 +196,7 @@ class ApiFinanceiraIntegrationTest(unittest.TestCase):
         preview = self.client.post(
             "/agent/v1/pagamentos/fatura/preview",
             headers={"X-Agent-Token": "token-teste"},
-            json={"conta_id": cartao["id"], "mes_ref": 7, "ano_ref": 2026},
+            json={"conta_id": cartao["id"], "mes_ref": 8, "ano_ref": 2026},
         )
         self.assertEqual(preview.status_code, 200, preview.text)
         self.assertTrue(preview.json()["precisa_confirmacao"])
@@ -207,7 +207,7 @@ class ApiFinanceiraIntegrationTest(unittest.TestCase):
             headers=headers,
             json={
                 "conta_id": cartao["id"],
-                "mes_ref": 7,
+                "mes_ref": 8,
                 "ano_ref": 2026,
                 "confirmado": True,
             },
@@ -224,7 +224,7 @@ class ApiFinanceiraIntegrationTest(unittest.TestCase):
             headers=headers,
             json={
                 "conta_id": cartao["id"],
-                "mes_ref": 7,
+                "mes_ref": 8,
                 "ano_ref": 2026,
                 "confirmado": True,
             },

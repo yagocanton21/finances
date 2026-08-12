@@ -10,7 +10,11 @@ from database import get_db
 from models import Cartao, Fatura, GastoDiario, PagamentoFatura
 from schemas import CartaoBase
 from schemas.cartoes import PagarFaturaIn
-from services.faturas import pertence_a_fatura, processar_pagamento_fatura
+from services.faturas import (
+    pertence_a_fatura,
+    processar_pagamento_fatura,
+    referencia_fatura_atual,
+)
 
 router = APIRouter()
 
@@ -80,6 +84,7 @@ def listar_cartoes(db: Session = Depends(get_db)):
 
     resultado = []
     for cartao in cartoes:
+        mes_fatura, ano_fatura = referencia_fatura_atual(hoje, cartao.data_fatura)
         dados = {
             coluna.name: getattr(cartao, coluna.name)
             for coluna in cartao.__table__.columns
@@ -87,8 +92,8 @@ def listar_cartoes(db: Session = Depends(get_db)):
         dados["fatura_atual"] = _calcular_fatura_do_mes(
             gastos_por_cartao[cartao.id],
             cartao.data_fatura,
-            hoje.month,
-            hoje.year,
+            mes_fatura,
+            ano_fatura,
         )
         resultado.append(dados)
     return resultado
@@ -158,8 +163,9 @@ def pagar_fatura(
             raise HTTPException(status_code=404, detail="Cartao nao encontrado")
 
         hoje = datetime.now(pytz.timezone("America/Sao_Paulo"))
-        mes_ref = pagamento.mes_ref if pagamento and pagamento.mes_ref else hoje.month
-        ano_ref = pagamento.ano_ref if pagamento and pagamento.ano_ref else hoje.year
+        mes_atual, ano_atual = referencia_fatura_atual(hoje, cartao.data_fatura)
+        mes_ref = pagamento.mes_ref if pagamento and pagamento.mes_ref else mes_atual
+        ano_ref = pagamento.ano_ref if pagamento and pagamento.ano_ref else ano_atual
 
         resposta = processar_pagamento_fatura(
             db,
@@ -296,8 +302,9 @@ def consultar_fatura(
         raise HTTPException(status_code=404, detail="Cartao nao encontrado")
 
     hoje = datetime.now(pytz.timezone("America/Sao_Paulo"))
-    mes = mes_ref or hoje.month
-    ano = ano_ref or hoje.year
+    mes_atual, ano_atual = referencia_fatura_atual(hoje, cartao.data_fatura)
+    mes = mes_ref or mes_atual
+    ano = ano_ref or ano_atual
     fatura = (
         db.query(Fatura)
         .filter(Fatura.cartao_id == id, Fatura.mes_ref == mes, Fatura.ano_ref == ano)

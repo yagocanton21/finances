@@ -80,21 +80,17 @@ const isParcela = (gasto: Gasto) =>
   gasto.tipo_pagamento.toLowerCase() === 'credito' &&
   (Boolean(gasto.compra_id) || gasto.parcelas > 1 || PARCELA_TEST_REGEX.test(gasto.descricao));
 
+const referenciaFatura = (data: Date, diaFechamento: number) => {
+  const mesesAFrente = data.getDate() >= diaFechamento ? 2 : 1
+  const referencia = new Date(data.getFullYear(), data.getMonth() + mesesAFrente, 1)
+  return { mes: referencia.getMonth(), ano: referencia.getFullYear() }
+}
+
 const pertenceAoMesDaFatura = (gasto: Gasto, cartao: Cartao | undefined, mes: number, ano: number) => {
   const data = new Date(gasto.data)
-  let mesFatura = data.getMonth()
-  let anoFatura = data.getFullYear()
   const diaFechamento = cartao?.data_fatura || 15
-
-  if (data.getDate() >= diaFechamento) {
-    mesFatura += 1
-    if (mesFatura > 11) {
-      mesFatura = 0
-      anoFatura += 1
-    }
-  }
-
-  return mesFatura === mes && anoFatura === ano
+  const referencia = referenciaFatura(data, diaFechamento)
+  return referencia.mes === mes && referencia.ano === ano
 }
 
 const getTipoBadge = (tipo: string) => {
@@ -112,8 +108,10 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
   const [loading, setLoading] = useState(true)
 
   // Calendário
-  const [mesAtual, setMesAtual] = useState(new Date().getMonth())
-  const [anoAtual, setAnoAtual] = useState(new Date().getFullYear())
+  const hojeInicial = new Date()
+  const referenciaInicial = referenciaFatura(hojeInicial, 15)
+  const [mesAtual, setMesAtual] = useState(viewMode === 'parcelas' ? referenciaInicial.mes : hojeInicial.getMonth())
+  const [anoAtual, setAnoAtual] = useState(viewMode === 'parcelas' ? referenciaInicial.ano : hojeInicial.getFullYear())
 
   // Modal de Parcelas
   const [gastoSelecionado, setGastoSelecionado] = useState<Gasto | null>(null)
@@ -151,6 +149,18 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
     }
     fetchData()
   }, [apiUrl, mesAtual, anoAtual, viewMode])
+
+  useEffect(() => {
+    const hoje = new Date()
+    if (viewMode === 'parcelas') {
+      const referencia = referenciaFatura(hoje, 15)
+      setMesAtual(referencia.mes)
+      setAnoAtual(referencia.ano)
+    } else {
+      setMesAtual(hoje.getMonth())
+      setAnoAtual(hoje.getFullYear())
+    }
+  }, [viewMode])
 
   // ─── Cálculos memoizados: só recalculados quando as dependências mudarem ───
 
@@ -200,18 +210,9 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
         const d = new Date(g.data)
         const cartao = cartoesDoPerfil.find(c => c.id === g.cartao_id)
         const diaFechamento = cartao?.data_fatura || 15
+        const referencia = referenciaFatura(d, diaFechamento)
 
-        let mesFatura = d.getMonth()
-        let anoFatura = d.getFullYear()
-        if (d.getDate() >= diaFechamento) {
-          mesFatura += 1
-          if (mesFatura > 11) {
-            mesFatura = 0
-            anoFatura += 1
-          }
-        }
-
-        if (mesFatura === mesAtual && anoFatura === anoAtual) {
+        if (referencia.mes === mesAtual && referencia.ano === anoAtual) {
           return acc + g.valor
         }
         return acc
@@ -266,8 +267,14 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
   }
   const irHoje = () => {
     const now = new Date()
-    setMesAtual(now.getMonth())
-    setAnoAtual(now.getFullYear())
+    if (viewMode === 'parcelas') {
+      const referencia = referenciaFatura(now, 15)
+      setMesAtual(referencia.mes)
+      setAnoAtual(referencia.ano)
+    } else {
+      setMesAtual(now.getMonth())
+      setAnoAtual(now.getFullYear())
+    }
   }
 
   // ─── Handlers ───

@@ -25,15 +25,16 @@ class RegrasFinanceirasTest(unittest.TestCase):
             data=datetime(2026, 7, 16), valor=Decimal("100.00")
         )
 
-        self.assertFalse(_pertence_a_fatura(gasto, 15, 7, 2026))
-        self.assertTrue(_pertence_a_fatura(gasto, 15, 8, 2026))
+        self.assertFalse(_pertence_a_fatura(gasto, 15, 8, 2026))
+        self.assertTrue(_pertence_a_fatura(gasto, 15, 9, 2026))
 
     def test_fechamento_de_dezembro_avanca_o_ano(self):
         gasto = SimpleNamespace(
             data=datetime(2026, 12, 20), valor=Decimal("50.00")
         )
 
-        self.assertTrue(_pertence_a_fatura(gasto, 15, 1, 2027))
+        self.assertFalse(_pertence_a_fatura(gasto, 15, 1, 2027))
+        self.assertTrue(_pertence_a_fatura(gasto, 15, 2, 2027))
 
     def test_soma_da_fatura_preserva_centavos(self):
         gastos = [
@@ -46,7 +47,7 @@ class RegrasFinanceirasTest(unittest.TestCase):
         ]
 
         self.assertEqual(
-            _calcular_fatura_do_mes(gastos, 15, 7, 2026),
+            _calcular_fatura_do_mes(gastos, 15, 8, 2026),
             Decimal("0.30"),
         )
 
@@ -106,39 +107,39 @@ class CutoffFaturaTest(unittest.TestCase):
             data=datetime(2026, 7, 28), valor=Decimal("200.00")
         )
         # Com >=, dia 28 (fechamento=28) vai para agosto
-        self.assertFalse(_pertence_a_fatura(gasto, 28, 7, 2026))
-        self.assertTrue(_pertence_a_fatura(gasto, 28, 8, 2026))
+        self.assertFalse(_pertence_a_fatura(gasto, 28, 8, 2026))
+        self.assertTrue(_pertence_a_fatura(gasto, 28, 9, 2026))
 
     def test_compra_antes_do_fechamento_fica_no_mes(self):
         """Compra no dia 27 com fechamento 28 => fatura do mês atual."""
         gasto = SimpleNamespace(
             data=datetime(2026, 7, 27), valor=Decimal("100.00")
         )
-        self.assertTrue(_pertence_a_fatura(gasto, 28, 7, 2026))
-        self.assertFalse(_pertence_a_fatura(gasto, 28, 8, 2026))
+        self.assertFalse(_pertence_a_fatura(gasto, 28, 7, 2026))
+        self.assertTrue(_pertence_a_fatura(gasto, 28, 8, 2026))
 
     def test_compra_no_dia_1_com_fechamento_15(self):
         """Compra no dia 1 com fechamento 15 => fatura do mês atual."""
         gasto = SimpleNamespace(
             data=datetime(2026, 8, 1), valor=Decimal("50.00")
         )
-        self.assertTrue(_pertence_a_fatura(gasto, 15, 8, 2026))
+        self.assertTrue(_pertence_a_fatura(gasto, 15, 9, 2026))
 
     def test_compra_no_dia_15_com_fechamento_15(self):
         """Compra no dia 15 com fechamento 15 => fatura do mês seguinte (>=)."""
         gasto = SimpleNamespace(
             data=datetime(2026, 8, 15), valor=Decimal("75.00")
         )
-        self.assertFalse(_pertence_a_fatura(gasto, 15, 8, 2026))
-        self.assertTrue(_pertence_a_fatura(gasto, 15, 9, 2026))
+        self.assertFalse(_pertence_a_fatura(gasto, 15, 9, 2026))
+        self.assertTrue(_pertence_a_fatura(gasto, 15, 10, 2026))
 
     def test_fechamento_28_dezembro_avanca_para_janeiro(self):
         """Compra dia 28/12 com fechamento 28 => fatura janeiro do ano seguinte."""
         gasto = SimpleNamespace(
             data=datetime(2026, 12, 28), valor=Decimal("300.00")
         )
-        self.assertFalse(_pertence_a_fatura(gasto, 28, 12, 2026))
-        self.assertTrue(_pertence_a_fatura(gasto, 28, 1, 2027))
+        self.assertFalse(_pertence_a_fatura(gasto, 28, 1, 2027))
+        self.assertTrue(_pertence_a_fatura(gasto, 28, 2, 2027))
 
     def test_calculo_fatura_com_gastos_mistos(self):
         """Gastos antes e no dia do fechamento devem ser separados corretamente."""
@@ -149,12 +150,12 @@ class CutoffFaturaTest(unittest.TestCase):
         ]
         # Fatura de julho: só o gasto do dia 27
         self.assertEqual(
-            _calcular_fatura_do_mes(gastos, 28, 7, 2026),
+            _calcular_fatura_do_mes(gastos, 28, 8, 2026),
             Decimal("100.00"),
         )
         # Fatura de agosto: gastos do dia 28 e 29
         self.assertEqual(
-            _calcular_fatura_do_mes(gastos, 28, 8, 2026),
+            _calcular_fatura_do_mes(gastos, 28, 9, 2026),
             Decimal("250.00"),
         )
 
