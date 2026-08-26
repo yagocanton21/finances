@@ -48,6 +48,10 @@ interface FaturaDetalhe {
   pagamentos: PagamentoFatura[];
 }
 
+type PrimaryTab = 'dashboard' | 'movimentacoes' | 'carteira' | 'planejamento'
+type MovementView = 'diarios' | 'parcelas'
+type QuickAction = 'receita' | 'gasto' | 'aporte' | 'transferencia' | 'conta' | 'cartao'
+
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 // Formatter criado uma única vez no nível de módulo (evita recriação a cada render)
@@ -69,10 +73,12 @@ function App() {
   const [isGastoModalOpen, setIsGastoModalOpen] = useState(false)
   const [isAporteModalOpen, setIsAporteModalOpen] = useState(false)
   const [isTransferenciaModalOpen, setIsTransferenciaModalOpen] = useState(false)
+  const [isQuickActionsOpen, setIsQuickActionsOpen] = useState(false)
   const [cartaoPagamento, setCartaoPagamento] = useState<Cartao | null>(null)
   const [faturaDetalhe, setFaturaDetalhe] = useState<{ cartao: Cartao; fatura: FaturaDetalhe } | null>(null)
   const [tipoPagamentoGasto, setTipoPagamentoGasto] = useState<'credito' | 'debito' | 'pix'>('credito')
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'gastos' | 'parcelas' | 'planejamento'>('dashboard')
+  const [activeTab, setActiveTab] = useState<PrimaryTab>('dashboard')
+  const [movementView, setMovementView] = useState<MovementView>('diarios')
 
   // Recalcular faturas dinamicamente
   const fetchDados = async () => {
@@ -303,156 +309,195 @@ function App() {
     }
   }
 
+  const abrirAcao = (acao: QuickAction) => {
+    setIsQuickActionsOpen(false)
+    if (acao === 'receita') setIsReceitaModalOpen(true)
+    if (acao === 'gasto') setIsGastoModalOpen(true)
+    if (acao === 'aporte') setIsAporteModalOpen(true)
+    if (acao === 'transferencia') setIsTransferenciaModalOpen(true)
+    if (acao === 'conta') setIsContaModalOpen(true)
+    if (acao === 'cartao') setIsCartaoModalOpen(true)
+  }
+
   return (
     <div className="container">
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5rem' }}>
-        <div>
-          <h1 style={{ color: 'var(--accent-primary)' }}>Finanças Pro</h1>
-          <p>Visão geral e controle inteligente</p>
+      <header className="app-header">
+        <div className="brand-block">
+          <span className="brand-kicker">Controle financeiro</span>
+          <h1>Finanças Pro</h1>
+          <p>O essencial primeiro. Os detalhes quando você precisar.</p>
         </div>
 
-        <div className="glass-panel" style={{ padding: '0.5rem', display: 'flex', gap: '0.5rem' }}>
+        <div className="header-actions">
+          <div className="profile-switcher" aria-label="Selecionar perfil">
           <button
-            className={`btn transition-all ${activeProfile === 'Eu' ? 'btn-primary' : ''}`}
-            style={{ padding: '0.5rem 1rem', background: activeProfile !== 'Eu' ? 'transparent' : '', color: activeProfile !== 'Eu' ? 'var(--text-secondary)' : '' }}
+            className={`profile-option ${activeProfile === 'Eu' ? 'active' : ''}`}
             onClick={() => setActiveProfile('Eu')}
           >
-            Meu Perfil
+            Eu
           </button>
           <button
-            className={`btn transition-all ${activeProfile === 'Vô' ? 'btn-primary' : ''}`}
-            style={{ padding: '0.5rem 1rem', background: activeProfile !== 'Vô' ? 'transparent' : '', color: activeProfile !== 'Vô' ? 'var(--text-secondary)' : '' }}
+            className={`profile-option ${activeProfile === 'Vô' ? 'active' : ''}`}
             onClick={() => setActiveProfile('Vô')}
           >
-            Perfil do Vô
+            Vô
+          </button>
+          </div>
+          <button className="btn btn-primary quick-action-trigger" onClick={() => setIsQuickActionsOpen(true)}>
+            <span aria-hidden="true">+</span> Nova movimentação
           </button>
         </div>
       </header>
 
-      {/* Navegação por Abas */}
-      <div className="glass-panel nav-tabs">
+      <nav className="glass-panel nav-tabs" aria-label="Navegação principal">
         <button className={`nav-tab ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
-          📊 Dashboard
+          Início
         </button>
-        <button className={`nav-tab ${activeTab === 'gastos' ? 'active' : ''}`} onClick={() => setActiveTab('gastos')}>
-          📋 Gastos Diários
+        <button className={`nav-tab ${activeTab === 'movimentacoes' ? 'active' : ''}`} onClick={() => setActiveTab('movimentacoes')}>
+          Movimentações
         </button>
-        <button className={`nav-tab ${activeTab === 'parcelas' ? 'active' : ''}`} onClick={() => setActiveTab('parcelas')}>
-          💳 Minhas Parcelas
+        <button className={`nav-tab ${activeTab === 'carteira' ? 'active' : ''}`} onClick={() => setActiveTab('carteira')}>
+          Contas e cartões
         </button>
         <button className={`nav-tab ${activeTab === 'planejamento' ? 'active' : ''}`} onClick={() => setActiveTab('planejamento')}>
           Planejamento
         </button>
-      </div>
+      </nav>
 
       <main>
         {activeTab === 'dashboard' ? (
-          <>
-            <div className="action-bar">
-              <button className="btn btn-primary" onClick={() => setIsReceitaModalOpen(true)}>+ Nova Receita</button>
-              <button className="btn transition-all" style={{ background: 'var(--danger)', color: 'white' }} onClick={() => setIsGastoModalOpen(true)}>- Novo Gasto</button>
-              <button className="btn transition-all" style={{ background: 'var(--success)', color: 'white' }} onClick={() => setIsAporteModalOpen(true)}>+ Guardar Dinheiro</button>
-              <button className="btn transition-all" onClick={() => setIsTransferenciaModalOpen(true)}>Transferir</button>
-              <button className="btn transition-all" onClick={() => setIsContaModalOpen(true)}>Adicionar Conta</button>
-              <button className="btn transition-all" style={{ background: 'var(--bg-surface-hover)', color: 'white' }} onClick={() => setIsCartaoModalOpen(true)}>Adicionar Cartão</button>
+          <section className="page-section">
+            <div className="section-heading">
+              <div><span className="eyebrow">Visão geral</span><h2>Seu mês em poucos números</h2></div>
+              <span className="context-chip">Perfil: {activeProfile}</span>
             </div>
 
-            {/* Resumo Financeiro */}
-            <div className="dashboard-grid">
-              <div className="glass-panel summary-box hover-lift transition-all">
-                <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Saldo Disponível</span>
-                <span className="summary-value" style={{ color: 'var(--success)' }}>{formatMoney(saldoTotal)}</span>
+            <div className="metrics-grid">
+              <div className="glass-panel metric-card metric-positive">
+                <span className="metric-label">Saldo disponível</span>
+                <span className="metric-value">{formatMoney(saldoTotal)}</span>
+                <span className="metric-hint">Em {contasFiltradas.length} {contasFiltradas.length === 1 ? 'conta' : 'contas'}</span>
               </div>
-
-              <div className="glass-panel summary-box hover-lift transition-all">
-                <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Faturas em Aberto</span>
-                <span className="summary-value" style={{ color: 'var(--danger)' }}>{formatMoney(faturaTotal)}</span>
+              <div className="glass-panel metric-card metric-negative">
+                <span className="metric-label">Faturas em aberto</span>
+                <span className="metric-value">{formatMoney(faturaTotal)}</span>
+                <span className="metric-hint">Em {cartoesFiltrados.length} {cartoesFiltrados.length === 1 ? 'cartão' : 'cartões'}</span>
+              </div>
+              <div className="glass-panel metric-card">
+                <span className="metric-label">Guardado no mês</span>
+                <span className="metric-value">{formatMoney(resumoMensal?.guardado || 0)}</span>
+                <span className="metric-hint">Reserva acumulada no período</span>
+              </div>
+              <div className="glass-panel metric-card">
+                <span className="metric-label">Resultado de caixa</span>
+                <span className="metric-value">{formatMoney(resumoMensal?.regime.caixa || 0)}</span>
+                <span className="metric-hint">Entradas menos saídas efetivas</span>
               </div>
             </div>
 
-            {resumoMensal && (
-              <div className="dashboard-grid">
-                <div className="glass-panel summary-box hover-lift transition-all">
-                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Guardado no mês</span>
-                  <span className="summary-value" style={{ color: 'var(--success)' }}>{formatMoney(resumoMensal.guardado)}</span>
-                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Valor separado para sua reserva</span>
+            <div className="overview-grid">
+              <div className="glass-panel focus-panel">
+                <div className="panel-heading">
+                  <div><span className="eyebrow">Onde mais gastou</span><h3>Principais categorias</h3></div>
+                  <button className="text-button" onClick={() => setActiveTab('movimentacoes')}>Ver movimentações</button>
                 </div>
-                <div className="glass-panel summary-box hover-lift transition-all">
-                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Maiores categorias</span>
-                  {resumoMensal.categorias.length === 0 ? <span style={{ color: 'var(--text-secondary)' }}>Nenhum gasto categorizado</span> : resumoMensal.categorias.slice(0, 3).map(item => (
-                    <div key={item.nome} className="flex-between"><span>{item.nome}</span><strong>{formatMoney(item.total)}</strong></div>
-                  ))}
-                </div>
-                <div className="glass-panel summary-box hover-lift transition-all">
-                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Resultado de caixa</span>
-                  <span className="summary-value">{formatMoney(resumoMensal.regime.caixa)}</span>
-                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Entradas e saídas efetivas do mês</span>
-                </div>
-              </div>
-            )}
-
-            <h2 style={{ marginBottom: '1.5rem' }}>Minhas Contas</h2>
-            <div className="dashboard-grid">
-              {contasFiltradas.map(conta => (
-                <div key={conta.id} className="glass-panel card-item hover-lift transition-all">
-                  <h3>{conta.nome}</h3>
-                  <div className="flex-between"><span>Saldo disponível</span><strong>{formatMoney(conta.saldo)}</strong></div>
-                </div>
-              ))}
-            </div>
-
-            {/* Lista de Cartões */}
-            <h2 style={{ marginBottom: '1.5rem' }}>Meus Cartões</h2>
-
-            {loading ? (
-              <p>Carregando dados...</p>
-            ) : cartoesFiltrados.length === 0 ? (
-              <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center' }}>
-                <p>Nenhum cartão encontrado para este perfil.</p>
-              </div>
-            ) : (
-              <div className="dashboard-grid">
-                {cartoesFiltrados.map(cartao => (
-                  <div key={cartao.id} className="glass-panel card-item hover-lift transition-all">
-                    <div className="card-header">
-                      <h3 style={{ fontSize: '1.25rem', fontWeight: 600 }}>{cartao.nome}</h3>
-                      <span style={{ fontSize: '0.8rem', padding: '0.2rem 0.6rem', borderRadius: 'var(--radius-full)', background: 'rgba(99, 102, 241, 0.2)', color: 'var(--accent-primary)' }}>
-                        Vence dia {cartao.dia_vencimento}
-                      </span>
-                    </div>
-
-                    <div className="card-body">
-                      <div className="flex-between">
-                        <span style={{ color: 'var(--text-secondary)' }}>Saldo na Conta</span>
-                        <span style={{ fontWeight: 600, color: 'var(--success)' }}>{formatMoney(cartao.saldo)}</span>
-                      </div>
-                      <div className="flex-between">
-                        <span style={{ color: 'var(--text-secondary)' }}>Fatura Atual</span>
-                        <span style={{ fontWeight: 600, color: 'var(--danger)' }}>{formatMoney(cartao.fatura_atual)}</span>
-                      </div>
-                      <div className="flex-between">
-                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Limite Disponível</span>
-                        <span style={{ fontWeight: 500, fontSize: '0.85rem' }}>{formatMoney(cartao.limite)}</span>
-                      </div>
-                    </div>
-
-                    <div className="action-bar">
-                      <button className="btn transition-all" onClick={() => setCartaoPagamento(cartao)}>Pagar Fatura</button>
-                      <button className="btn transition-all" onClick={() => handleAbrirFatura(cartao)}>Detalhes</button>
-                    </div>
-                  </div>
+                {!resumoMensal || resumoMensal.categorias.length === 0 ? <p>Nenhum gasto categorizado neste mês.</p> : resumoMensal.categorias.slice(0, 3).map((item, index) => (
+                  <div key={item.nome} className="rank-row"><span className="rank-number">{index + 1}</span><span>{item.nome}</span><strong>{formatMoney(item.total)}</strong></div>
                 ))}
               </div>
-            )}
-          </>
+              <div className="glass-panel focus-panel">
+                <div className="panel-heading">
+                  <div><span className="eyebrow">Sua estrutura</span><h3>Contas e cartões</h3></div>
+                  <button className="text-button" onClick={() => setActiveTab('carteira')}>Gerenciar</button>
+                </div>
+                <div className="wallet-summary-row"><span>Contas ativas</span><strong>{contasFiltradas.length}</strong></div>
+                <div className="wallet-summary-row"><span>Cartões ativos</span><strong>{cartoesFiltrados.length}</strong></div>
+                <div className="wallet-summary-row"><span>Limite disponível</span><strong>{formatMoney(cartoesFiltrados.reduce((total, cartao) => total + cartao.limite, 0))}</strong></div>
+              </div>
+            </div>
+          </section>
+        ) : activeTab === 'movimentacoes' ? (
+          <section className="page-section">
+            <div className="section-heading">
+              <div><span className="eyebrow">Histórico</span><h2>Movimentações</h2></div>
+              <button className="btn btn-primary" onClick={() => setIsQuickActionsOpen(true)}>+ Adicionar</button>
+            </div>
+            <div className="sub-tabs" role="tablist" aria-label="Tipo de movimentação">
+              <button className={movementView === 'diarios' ? 'active' : ''} onClick={() => setMovementView('diarios')}>Gastos do mês</button>
+              <button className={movementView === 'parcelas' ? 'active' : ''} onClick={() => setMovementView('parcelas')}>Compras parceladas</button>
+            </div>
+            <GastosList apiUrl={API_URL} activeProfile={activeProfile} categorias={categorias} contas={contas} viewMode={movementView} />
+          </section>
+        ) : activeTab === 'carteira' ? (
+          <section className="page-section">
+            <div className="section-heading">
+              <div><span className="eyebrow">Carteira</span><h2>Contas e cartões</h2></div>
+              <div className="compact-actions">
+                <button className="btn" onClick={() => abrirAcao('transferencia')}>Transferir</button>
+                <button className="btn" onClick={() => abrirAcao('conta')}>+ Conta</button>
+                <button className="btn btn-primary" onClick={() => abrirAcao('cartao')}>+ Cartão</button>
+              </div>
+            </div>
+
+            <div className="content-section">
+              <div className="content-section-title"><h3>Contas</h3><span>{contasFiltradas.length}</span></div>
+              {contasFiltradas.length === 0 ? <div className="glass-panel empty-state"><p>Nenhuma conta cadastrada para este perfil.</p></div> : (
+                <div className="wallet-grid">
+                  {contasFiltradas.map(conta => (
+                    <article key={conta.id} className="glass-panel wallet-card">
+                      <span className="wallet-card-type">Conta</span><h3>{conta.nome}</h3>
+                      <span className="wallet-card-label">Saldo disponível</span><strong className="wallet-card-value">{formatMoney(conta.saldo)}</strong>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="content-section">
+              <div className="content-section-title"><h3>Cartões</h3><span>{cartoesFiltrados.length}</span></div>
+              {loading ? <p>Carregando dados...</p> : cartoesFiltrados.length === 0 ? <div className="glass-panel empty-state"><p>Nenhum cartão cadastrado para este perfil.</p></div> : (
+                <div className="wallet-grid">
+                  {cartoesFiltrados.map(cartao => (
+                    <article key={cartao.id} className="glass-panel wallet-card credit-card">
+                      <div className="card-header">
+                        <div><span className="wallet-card-type">Cartão</span><h3>{cartao.nome}</h3></div>
+                        <span className="due-chip">Vence dia {cartao.dia_vencimento}</span>
+                      </div>
+                      <div className="wallet-card-stats">
+                        <div><span>Fatura atual</span><strong className="danger-text">{formatMoney(cartao.fatura_atual)}</strong></div>
+                        <div><span>Limite disponível</span><strong>{formatMoney(cartao.limite)}</strong></div>
+                      </div>
+                      <div className="card-actions">
+                        <button className="btn btn-primary" onClick={() => setCartaoPagamento(cartao)}>Pagar fatura</button>
+                        <button className="btn" onClick={() => handleAbrirFatura(cartao)}>Detalhes</button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
         ) : activeTab === 'planejamento' ? (
           <Planejamento apiUrl={API_URL} activeProfile={activeProfile} contas={contas} cartoes={cartoes} categorias={categorias} />
-        ) : (
-          <GastosList apiUrl={API_URL} activeProfile={activeProfile} categorias={categorias} viewMode={activeTab === 'gastos' ? 'diarios' : 'parcelas'} />
-        )}
+        ) : null}
       </main>
 
       {/* MODAIS */}
+
+      <Modal isOpen={isQuickActionsOpen} onClose={() => setIsQuickActionsOpen(false)} title="Nova movimentação">
+        <p className="modal-intro">O que você quer registrar?</p>
+        <div className="quick-action-grid">
+          <button className="quick-action-card income" onClick={() => abrirAcao('receita')}><strong>Receita</strong><span>Dinheiro que entrou</span></button>
+          <button className="quick-action-card expense" onClick={() => abrirAcao('gasto')}><strong>Gasto</strong><span>Compra ou pagamento</span></button>
+          <button className="quick-action-card" onClick={() => abrirAcao('transferencia')}><strong>Transferência</strong><span>Entre suas contas</span></button>
+          <button className="quick-action-card" onClick={() => abrirAcao('aporte')}><strong>Guardar dinheiro</strong><span>Separar para uma meta</span></button>
+        </div>
+        <div className="modal-secondary-actions">
+          <span>Configurar carteira</span>
+          <button className="text-button" onClick={() => abrirAcao('conta')}>Adicionar conta</button>
+          <button className="text-button" onClick={() => abrirAcao('cartao')}>Adicionar cartão</button>
+        </div>
+      </Modal>
 
       {/* Modal Novo Cartão */}
       <Modal isOpen={isCartaoModalOpen} onClose={() => setIsCartaoModalOpen(false)} title="Adicionar Nova Conta/Cartão">

@@ -1,0 +1,115 @@
+name: Staging
+
+on:
+  push:
+    branches:
+      - staging
+  workflow_dispatch:
+
+concurrency:
+  group: financas-staging
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Validate candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+
+      - name: Migrate and test backend
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          RUN_INTEGRATION_TESTS: "1"
+        run: |
+          alembic upgrade head
+          python -m unittest discover -s tests -v
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build and lint frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+          npm run lint
+
+  deploy:
+    name: Deploy isolated staging
+    needs: test
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - name: Deploy staging stack to VPS
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            RELEASE_DIR=/home/ubuntu/finan-as-staging
+            PRODUCTION_DIR=/home/ubuntu/finan-as-release
+            LEGACY_DIR=/home/ubuntu/finan-as
+
+            if [ ! -d "$RELEASE_DIR/.git" ]; then
+              git clone --branch staging https://github.com/yagocanton21/finances.git "$RELEASE_DIR"
+            else
+              git -C "$RELEASE_DIR" fetch origin staging
+            fi
+
+            TARGET_REVISION="$(git -C "$RELEASE_DIR" rev-parse origin/staging)"
+            git -C "$RELEASE_DIR" checkout --detach "$TARGET_REVISION"
+
+            if [ ! -f "$RELEASE_DIR/.env" ]; then
+              if [ -f "$PRODUCTION_DIR/.env" ]; then
+                install -m 600 "$PRODUCTION_DIR/.env" "$RELEASE_DIR/.env"
+              elif [ -f "$LEGACY_DIR/.env" ]; then
+                install -m 600 "$LEGACY_DIR/.env" "$RELEASE_DIR/.env"
+              else
+                echo "Arquivo .env base não encontrado na VPS" >&2
+                exit 1
+              fi
+            fi
+
+            cd "$RELEASE_DIR"
+            docker compose -p financas-staging -f docker-compose.staging.yml build --pull
+            docker compose -p financas-staging -f docker-compose.staging.yml up -d --remove-orphans --wait --wait-timeout 180
+            curl --fail --silent --show-error --max-time 10 http://127.0.0.1:8081/api/health >/dev/null
+            docker compose -p financas-staging -f docker-compose.staging.yml ps
+
+            echo "Staging revision: $TARGET_REVISION"
+            echo "Staging URL: http://${{ secrets.VPS_HOST }}:8081"

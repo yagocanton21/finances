@@ -10,7 +10,8 @@ interface Gasto {
   data: string;
   tipo_pagamento: string;
   parcelas: number;
-  cartao_id: number;
+  cartao_id: number | null;
+  conta_id?: number | null;
   pago?: boolean;
   compra_id?: string | null;
   numero_parcela?: number;
@@ -31,11 +32,18 @@ interface Cartao {
   data_fatura: number;
 }
 
+interface Conta {
+  id: number;
+  nome: string;
+  dono: string;
+}
+
 interface GastosListProps {
   apiUrl: string;
   activeProfile: string;
   viewMode: 'diarios' | 'parcelas';
   categorias: Categoria[];
+  contas: Conta[];
 }
 
 interface PaginatedResponse<T> {
@@ -103,7 +111,7 @@ const getTipoBadge = (tipo: string) => {
   }
 }
 
-export default function GastosList({ apiUrl, activeProfile, viewMode, categorias }: GastosListProps) {
+export default function GastosList({ apiUrl, activeProfile, viewMode, categorias, contas }: GastosListProps) {
   const [gastos, setGastos] = useState<Gasto[]>([])
   const [cartoes, setCartoes] = useState<Cartao[]>([])
   const [loading, setLoading] = useState(true)
@@ -175,14 +183,29 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
     [cartoesDoPerfil]
   )
 
-  const cartaoNomes = useMemo(
-    () => Object.fromEntries(cartoesDoPerfil.map(c => [c.id, c.nome])),
-    [cartoesDoPerfil]
+  const contasDoPerfil = useMemo(
+    () => contas.filter(c => c.dono === activeProfile),
+    [contas, activeProfile]
+  )
+
+  const contaIds = useMemo(
+    () => new Set(contasDoPerfil.map(c => c.id)),
+    [contasDoPerfil]
+  )
+
+  const destinoNomes = useMemo(
+    () => Object.fromEntries([
+      ...contasDoPerfil.map(c => [c.id, c.nome] as const),
+      ...cartoesDoPerfil.map(c => [c.id, c.nome] as const),
+    ]),
+    [contasDoPerfil, cartoesDoPerfil]
   )
 
   const gastosFiltrados = useMemo(() =>
     gastos
-      .filter(g => cartaoIds.has(g.cartao_id))
+      .filter(g => g.tipo_pagamento.toLowerCase() === 'credito'
+        ? g.cartao_id !== null && cartaoIds.has(g.cartao_id)
+        : g.conta_id != null && contaIds.has(g.conta_id))
       .filter(g => {
         const parcela = isParcela(g);
         if (viewMode === 'diarios' && parcela) return false;
@@ -201,12 +224,12 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
         const diff = parseCivilDate(b.data).getTime() - parseCivilDate(a.data).getTime();
         return diff !== 0 ? diff : b.id - a.id;
       }),
-    [gastos, cartaoIds, cartoesDoPerfil, mesAtual, anoAtual, viewMode]
+    [gastos, cartaoIds, contaIds, cartoesDoPerfil, mesAtual, anoAtual, viewMode]
   )
 
   const projecaoFatura = useMemo(() =>
     gastos
-      .filter(g => cartaoIds.has(g.cartao_id) && g.tipo_pagamento.toLowerCase() === 'credito' && !g.pago)
+      .filter(g => g.cartao_id !== null && cartaoIds.has(g.cartao_id) && g.tipo_pagamento.toLowerCase() === 'credito' && !g.pago)
       .reduce((acc, g) => {
         const d = parseCivilDate(g.data)
         const cartao = cartoesDoPerfil.find(c => c.id === g.cartao_id)
@@ -497,7 +520,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
                           <span className="gasto-badge" style={{ background: badge.color, color: badge.text }}>
                             {badge.label}
                           </span>
-                          <span className="gasto-cartao">{cartaoNomes[gasto.cartao_id] || 'Cartão'}</span>
+                          <span className="gasto-cartao">{destinoNomes[gasto.tipo_pagamento.toLowerCase() === 'credito' ? gasto.cartao_id || 0 : gasto.conta_id || 0] || (gasto.tipo_pagamento.toLowerCase() === 'credito' ? 'Cartão' : 'Conta')}</span>
                           {gasto.categoria_id && <span className="gasto-cartao">{categorias.find(c => c.id === gasto.categoria_id)?.nome || 'Categoria'}</span>}
                         </div>
                       </div>

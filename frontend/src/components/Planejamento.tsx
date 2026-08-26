@@ -42,6 +42,8 @@ export default function Planejamento({ apiUrl, activeProfile, contas, cartoes, c
   const [recorrenciaModal, setRecorrenciaModal] = useState(false)
   const [tipoRecorrencia, setTipoRecorrencia] = useState<'gasto' | 'receita'>('gasto')
   const [pagamentoRecorrencia, setPagamentoRecorrencia] = useState('pix')
+  const [activeSection, setActiveSection] = useState<'visao' | 'metas' | 'orcamentos' | 'recorrencias'>('visao')
+  const [showAllAlerts, setShowAllAlerts] = useState(false)
 
   const carregar = useCallback(async () => {
     const hoje = new Date()
@@ -139,68 +141,91 @@ export default function Planejamento({ apiUrl, activeProfile, contas, cartoes, c
   }
 
   return (
-    <div>
-      <div className="action-bar">
-        <button className="btn btn-primary" onClick={() => setMetaModal(true)}>+ Nova meta</button>
-        <button className="btn btn-primary" onClick={() => setOrcamentoModal(true)}>+ Orçamento</button>
-        <button className="btn btn-primary" onClick={() => setRecorrenciaModal(true)}>+ Recorrência</button>
-        <button className="btn" onClick={async () => { await apiRequest(`${apiUrl}/planejamento/recorrencias/processar`, { method: 'POST' }); await carregar() }}>Processar recorrências</button>
+    <section className="page-section">
+      <div className="section-heading">
+        <div><span className="eyebrow">Futuro financeiro</span><h2>Planejamento</h2></div>
       </div>
 
-      <div className="dashboard-grid">
-        <div className="glass-panel summary-box">
-          <span className="stat-label">Saldo atual</span>
-          <span className="summary-value">{money(projecao?.saldo_atual || 0)}</span>
-        </div>
-        {projecao?.pontos.map(ponto => (
-          <div key={ponto.dias} className="glass-panel summary-box">
-            <span className="stat-label">Projeção em {ponto.dias} dias</span>
-            <span className="summary-value">{money(ponto.saldo_projetado)}</span>
+      <div className="sub-tabs planning-tabs" role="tablist" aria-label="Área de planejamento">
+        <button className={activeSection === 'visao' ? 'active' : ''} onClick={() => setActiveSection('visao')}>Visão futura</button>
+        <button className={activeSection === 'metas' ? 'active' : ''} onClick={() => setActiveSection('metas')}>Metas</button>
+        <button className={activeSection === 'orcamentos' ? 'active' : ''} onClick={() => setActiveSection('orcamentos')}>Orçamentos</button>
+        <button className={activeSection === 'recorrencias' ? 'active' : ''} onClick={() => setActiveSection('recorrencias')}>Recorrências</button>
+      </div>
+
+      {activeSection === 'visao' && (
+        <>
+          <div className="metrics-grid planning-metrics">
+            <div className="glass-panel metric-card"><span className="metric-label">Saldo atual</span><span className="metric-value">{money(projecao?.saldo_atual || 0)}</span></div>
+            {projecao?.pontos.map(ponto => (
+              <div key={ponto.dias} className="glass-panel metric-card">
+                <span className="metric-label">Em {ponto.dias} dias</span>
+                <span className="metric-value">{money(ponto.saldo_projetado)}</span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-
-      <h2>Alertas</h2>
-      <div className="dashboard-grid">
-        {alertas.length === 0 ? <div className="glass-panel card-item">Tudo sob controle.</div> : alertas.map((alerta, index) => (
-          <div key={`${alerta.tipo}-${index}`} className="glass-panel card-item">
-            <strong>{alerta.severidade === 'alta' ? 'Atenção' : 'Aviso'}</strong>
-            <span>{alerta.mensagem}</span>
+          <div className="content-section">
+            <div className="content-section-title"><h3>Alertas importantes</h3><span>{alertas.length}</span></div>
+            {alertas.length === 0 ? <div className="glass-panel empty-state"><p>Tudo sob controle por aqui.</p></div> : (
+              <div className="alerts-list">
+                {(showAllAlerts ? alertas : alertas.slice(0, 3)).map((alerta, index) => (
+                  <div key={`${alerta.tipo}-${index}`} className={`glass-panel alert-row severity-${alerta.severidade}`}>
+                    <strong>{alerta.severidade === 'alta' ? 'Atenção' : 'Aviso'}</strong><span>{alerta.mensagem}</span>
+                  </div>
+                ))}
+                {alertas.length > 3 && <button className="text-button align-start" onClick={() => setShowAllAlerts(value => !value)}>{showAllAlerts ? 'Mostrar menos' : `Ver todos os ${alertas.length} alertas`}</button>}
+              </div>
+            )}
           </div>
-        ))}
-      </div>
+        </>
+      )}
 
-      <h2>Metas</h2>
-      <div className="dashboard-grid">
-        {metas.map(meta => (
-          <div key={meta.id} className="glass-panel card-item">
-            <div className="flex-between"><strong>{meta.nome}</strong><span>{Math.round(meta.progresso_percentual)}%</span></div>
-            <span>{money(meta.saldo)} de {money(meta.valor_alvo)}</span>
-            <div className="action-bar">
-              <button className="btn" onClick={() => movimentarMeta(meta, 'aporte')}>Aportar</button>
-              <button className="btn" onClick={() => movimentarMeta(meta, 'retirada')}>Retirar</button>
+      {activeSection === 'metas' && (
+        <div className="content-section">
+          <div className="content-section-title section-title-actions"><div><h3>Metas financeiras</h3><p>Acompanhe um objetivo de cada vez.</p></div><button className="btn btn-primary" onClick={() => setMetaModal(true)}>+ Nova meta</button></div>
+          {metas.length === 0 ? <div className="glass-panel empty-state"><p>Você ainda não criou nenhuma meta.</p></div> : (
+            <div className="wallet-grid">
+              {metas.map(meta => (
+                <div key={meta.id} className="glass-panel goal-card">
+                  <div className="flex-between"><strong>{meta.nome}</strong><span>{Math.round(meta.progresso_percentual)}%</span></div>
+                  <div className="goal-progress"><span style={{ width: `${Math.min(meta.progresso_percentual, 100)}%` }} /></div>
+                  <span className="metric-hint">{money(meta.saldo)} de {money(meta.valor_alvo)}</span>
+                  <div className="card-actions"><button className="btn btn-primary" onClick={() => movimentarMeta(meta, 'aporte')}>Aportar</button><button className="btn" onClick={() => movimentarMeta(meta, 'retirada')}>Retirar</button></div>
+                </div>
+              ))}
             </div>
-          </div>
-        ))}
-      </div>
+          )}
+        </div>
+      )}
 
-      <h2>Orçamentos do mês</h2>
-      <div className="dashboard-grid">
-        {orcamentos.map(item => (
-          <div key={item.id} className="glass-panel card-item">
-            <strong>{categorias.find(c => c.id === item.categoria_id)?.nome || 'Categoria'}</strong>
-            <span>{money(item.gasto)} de {money(item.limite)} ({Math.round(item.percentual)}%)</span>
-            <span>{item.situacao}</span>
-          </div>
-        ))}
-      </div>
+      {activeSection === 'orcamentos' && (
+        <div className="content-section">
+          <div className="content-section-title section-title-actions"><div><h3>Orçamentos do mês</h3><p>Limites por categoria para manter o ritmo.</p></div><button className="btn btn-primary" onClick={() => setOrcamentoModal(true)}>+ Orçamento</button></div>
+          {orcamentos.length === 0 ? <div className="glass-panel empty-state"><p>Nenhum orçamento definido para este mês.</p></div> : (
+            <div className="wallet-grid">{orcamentos.map(item => (
+              <div key={item.id} className="glass-panel goal-card">
+                <div className="flex-between"><strong>{categorias.find(c => c.id === item.categoria_id)?.nome || 'Categoria'}</strong><span>{Math.round(item.percentual)}%</span></div>
+                <div className="goal-progress budget"><span style={{ width: `${Math.min(item.percentual, 100)}%` }} /></div>
+                <span className="metric-hint">{money(item.gasto)} de {money(item.limite)} · {item.situacao}</span>
+              </div>
+            ))}</div>
+          )}
+        </div>
+      )}
 
-      <h2>Recorrências</h2>
-      <div className="glass-panel card-item">
-        {recorrencias.length === 0 ? <span>Nenhuma recorrência cadastrada.</span> : recorrencias.map(item => (
-          <div key={item.id} className="flex-between"><span>{item.descricao}</span><span>{money(item.valor)} · {item.proxima_data}</span></div>
-        ))}
-      </div>
+      {activeSection === 'recorrencias' && (
+        <div className="content-section">
+          <div className="content-section-title section-title-actions">
+            <div><h3>Recorrências</h3><p>Contas e receitas que se repetem.</p></div>
+            <div className="compact-actions"><button className="btn" onClick={async () => { await apiRequest(`${apiUrl}/planejamento/recorrencias/processar`, { method: 'POST' }); await carregar() }}>Processar agora</button><button className="btn btn-primary" onClick={() => setRecorrenciaModal(true)}>+ Recorrência</button></div>
+          </div>
+          <div className="glass-panel recurring-list">
+            {recorrencias.length === 0 ? <p>Nenhuma recorrência cadastrada.</p> : recorrencias.map(item => (
+              <div key={item.id} className="recurring-row"><div><strong>{item.descricao}</strong><span>Próxima em {item.proxima_data}</span></div><strong>{money(item.valor)}</strong></div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <Modal isOpen={metaModal} onClose={() => setMetaModal(false)} title="Nova meta">
         <form onSubmit={salvarMeta}>
@@ -231,6 +256,6 @@ export default function Planejamento({ apiUrl, activeProfile, contas, cartoes, c
           <button className="btn btn-primary" type="submit">Salvar recorrência</button>
         </form>
       </Modal>
-    </div>
+    </section>
   )
 }
