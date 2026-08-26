@@ -5,5 +5,5 @@ from sqlalchemy.orm import relationship
 class Categoria(Base):
     __tablename__ = 'categorias'
     id = Column(Integer, primary_key=True, index=True)
-    nome = Column(String)
+    nome = Column(String, nullable=False)
     gastos = relationship("GastoDiario", back_populates="categoria")

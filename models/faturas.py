@@ -45,7 +45,36 @@ class PagamentoFatura(Base):
     situacao = Column(String(20), nullable=False)
     origem = Column(String(20), nullable=False, default="sistema", server_default="sistema")
     movimentou_saldo = Column(Boolean, nullable=False, default=True, server_default="true")
+    conta_id = Column(
+        Integer, ForeignKey("contas.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     idempotency_key = Column(String(120), nullable=True, unique=True, index=True)
+    estornado_em = Column(DateTime(timezone=True), nullable=True)
+    estorno_idempotency_key = Column(String(120), nullable=True, unique=True, index=True)
+    motivo_estorno = Column(String(255), nullable=True)
 
     fatura = relationship("Fatura", back_populates="pagamentos")
     cartao = relationship("Cartao", back_populates="pagamentos_fatura")
+    conta = relationship("Conta")
+    alocacoes = relationship(
+        "AlocacaoPagamentoFatura", back_populates="pagamento", cascade="all, delete-orphan"
+    )
+
+
+class AlocacaoPagamentoFatura(Base):
+    __tablename__ = "alocacoes_pagamento_fatura"
+    __table_args__ = (
+        UniqueConstraint("pagamento_id", "gasto_id", name="uq_alocacao_pagamento_gasto"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    pagamento_id = Column(
+        Integer, ForeignKey("pagamentos_fatura.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    gasto_id = Column(
+        Integer, ForeignKey("gasto_diarios.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    valor = Column(Numeric(12, 2), nullable=False)
+
+    pagamento = relationship("PagamentoFatura", back_populates="alocacoes")
+    gasto = relationship("GastoDiario")

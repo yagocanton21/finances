@@ -15,10 +15,14 @@ class Receita(Base):
         Integer, ForeignKey("categorias.id"), nullable=True
     )
     cartao_id = Column(
-        Integer, ForeignKey("cartoes.id", ondelete="RESTRICT"), nullable=False
+        Integer, ForeignKey("cartoes.id", ondelete="RESTRICT"), nullable=True
+    )
+    conta_id = Column(
+        Integer, ForeignKey("contas.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     origem = Column(String(30), nullable=False, default="frontend", index=True)
     external_id = Column(String(120), nullable=True, index=True)
 
     categoria = relationship("Categoria")
     cartao = relationship("Cartao", back_populates="receitas")
+    conta = relationship("Conta", back_populates="receitas")

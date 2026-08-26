@@ -50,6 +50,7 @@ class PagamentoFaturaAgenteIn(BaseModel):
     ano_ref: Optional[int] = Field(default=None, ge=1900, le=2200)
     confirmado: bool = False
     external_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    conta_pagamento_id: Optional[int] = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def validar_pagamento(self):

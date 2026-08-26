@@ -9,9 +9,21 @@ from sqlalchemy.orm import Session
 
 from app_logging import log_internal_error
 from database import get_db
-from models import Cartao, GastoDiario
+from models import (
+    AlocacaoPagamentoFatura,
+    Cartao,
+    Compra,
+    GastoDiario,
+    PagamentoFatura,
+)
 from schemas import GastoDiarioBase
 from schemas.gastos_diarios import ConciliarPagamentoIn, GastoDiarioPatch, TipoPagamento
+from services.contas import creditar, debitar, garantir_conta_cartao, resolver_conta
+from services.faturas import (
+    processar_pagamento_fatura,
+    referencia_fatura,
+    sincronizar_fatura,
+)
 
 router = APIRouter()
 CENTAVOS = Decimal("0.01")
@@ -52,27 +64,91 @@ def _estornar_gasto(cartao: Cartao, gasto: GastoDiario) -> None:
         cartao.limite += gasto.valor
 
 
+def _valor_alocado_ativo(db: Session, gasto_id: int) -> Decimal:
+    alocacoes = (
+        db.query(AlocacaoPagamentoFatura)
+        .join(
+            PagamentoFatura,
+            PagamentoFatura.id == AlocacaoPagamentoFatura.pagamento_id,
+        )
+        .filter(
+            AlocacaoPagamentoFatura.gasto_id == gasto_id,
+            PagamentoFatura.estornado_em.is_(None),
+        )
+        .all()
+    )
+    return sum((item.valor for item in alocacoes), Decimal("0"))
+
+
+def _itens_compra(db: Session, gasto: GastoDiario) -> list[GastoDiario]:
+    if not gasto.compra_id:
+        return [gasto]
+    return (
+        db.query(GastoDiario)
+        .filter(GastoDiario.compra_id == gasto.compra_id)
+        .with_for_update()
+        .order_by(GastoDiario.numero_parcela)
+        .all()
+    )
+
+
+def _sincronizar_competencias(db: Session, referencias: set[tuple[int, int, int]]) -> None:
+    for cartao_id, mes_ref, ano_ref in referencias:
+        cartao = db.query(Cartao).filter(Cartao.id == cartao_id).first()
+        if cartao:
+            sincronizar_fatura(db, cartao, mes_ref, ano_ref, criar=False)
+
+
 @router.post("/")
 def criar_gasto_diario(
     gasto_in: GastoDiarioBase, db: Session = Depends(get_db)
 ):
     try:
-        cartao = _buscar_cartao_bloqueado(db, gasto_in.cartao_id)
-        _aplicar_gasto(cartao, gasto_in.tipo_pagamento, gasto_in.valor)
+        cartao = (
+            _buscar_cartao_bloqueado(db, gasto_in.cartao_id)
+            if gasto_in.cartao_id
+            else None
+        )
+        conta = resolver_conta(
+            db,
+            conta_id=gasto_in.conta_id,
+            cartao_id=gasto_in.cartao_id,
+        )
+        if gasto_in.tipo_pagamento in (TipoPagamento.debito, TipoPagamento.pix):
+            debitar(db, conta, gasto_in.valor)
+        else:
+            if cartao.limite < gasto_in.valor:
+                raise HTTPException(status_code=409, detail="Limite insuficiente")
+            cartao.limite -= gasto_in.valor
 
         dados = gasto_in.model_dump(mode="python")
         dados["tipo_pagamento"] = gasto_in.tipo_pagamento.value
+        dados["conta_id"] = conta.id
+
+        compra_id = str(uuid4())
+        compra = Compra(
+            id=compra_id,
+            descricao=gasto_in.descricao,
+            valor_total=gasto_in.valor,
+            data_compra=gasto_in.data,
+            parcelas=gasto_in.parcelas,
+            tipo_pagamento=gasto_in.tipo_pagamento.value,
+            cartao_id=cartao.id if cartao else None,
+            conta_id=conta.id,
+            categoria_id=gasto_in.categoria_id,
+            situacao="ativa",
+        )
+        db.add(compra)
 
         if gasto_in.parcelas == 1:
             gasto = GastoDiario(
-                **dados, compra_id=None, numero_parcela=1, pago=False
+                **dados, compra_id=compra_id, numero_parcela=1, pago=False
             )
             db.add(gasto)
             db.commit()
             db.refresh(gasto)
             return gasto
 
-        compra_id = str(uuid4())
         valor_parcela = _centavos(gasto_in.valor / gasto_in.parcelas)
         valor_ultima = gasto_in.valor - valor_parcela * (gasto_in.parcelas - 1)
         
@@ -89,6 +165,7 @@ def criar_gasto_diario(
                 numero_parcela=numero,
                 categoria_id=gasto_in.categoria_id,
                 cartao_id=gasto_in.cartao_id,
+                conta_id=conta.id,
                 pago=False,
             )
             novos_gastos.append(gasto)
@@ -167,10 +244,29 @@ def conciliar_pagamento(
                 detail="A conciliacao manual e permitida apenas para gastos no credito",
             )
 
-        gasto.pago = conciliacao.pago
+        if not conciliacao.pago:
+            raise HTTPException(
+                status_code=409,
+                detail="Para reabrir uma parcela, estorne o pagamento da fatura",
+            )
+        mes_ref, ano_ref = referencia_fatura(gasto.data, gasto.cartao.data_fatura)
+        valor_pendente = gasto.valor - _valor_alocado_ativo(db, gasto.id)
+        if valor_pendente <= 0:
+            raise HTTPException(status_code=409, detail="Parcela ja coberta por pagamento")
+        resposta = processar_pagamento_fatura(
+            db,
+            cartao_id=gasto.cartao_id,
+            mes_ref=mes_ref,
+            ano_ref=ano_ref,
+            valor=valor_pendente,
+            idempotency_key=f"conciliacao-gasto-{gasto.id}",
+            origem="conciliacao_manual",
+            movimentar_saldo=False,
+            restaurar_limite=True,
+        )
         db.commit()
         db.refresh(gasto)
-        return gasto
+        return {"gasto": gasto, "pagamento": resposta}
     except HTTPException:
         db.rollback()
         raise
@@ -198,28 +294,59 @@ def atualizar_gasto_diario(
                 status_code=409,
                 detail="Gasto pago nao pode ser alterado; estorne a fatura primeiro",
             )
-        if gasto.compra_id or gasto_in.parcelas > 1:
+        if (gasto.compra_id and gasto.parcelas > 1) or gasto_in.parcelas > 1:
             raise HTTPException(
                 status_code=409,
                 detail="Edicao individual de compra parcelada nao e permitida",
             )
 
-        cartao_antigo = _buscar_cartao_bloqueado(db, gasto.cartao_id)
-        _estornar_gasto(cartao_antigo, gasto)
+        if _valor_alocado_ativo(db, gasto.id) > 0:
+            raise HTTPException(status_code=409, detail="Parcela com pagamento alocado; estorne a fatura primeiro")
+        referencias = set()
+        if gasto.tipo_pagamento == TipoPagamento.credito.value and gasto.cartao_id:
+            cartao_ref = _buscar_cartao_bloqueado(db, gasto.cartao_id)
+            mes_ref, ano_ref = referencia_fatura(gasto.data, cartao_ref.data_fatura)
+            referencias.add((gasto.cartao_id, mes_ref, ano_ref))
+        cartao_antigo = _buscar_cartao_bloqueado(db, gasto.cartao_id) if gasto.cartao_id else None
+        conta_antiga = resolver_conta(db, conta_id=gasto.conta_id, cartao_id=gasto.cartao_id)
+        if gasto.tipo_pagamento in (TipoPagamento.debito.value, TipoPagamento.pix.value):
+            creditar(db, conta_antiga, gasto.valor)
+        else:
+            cartao_antigo.limite += gasto.valor
         cartao_novo = (
             cartao_antigo
             if gasto_in.cartao_id == gasto.cartao_id
             else _buscar_cartao_bloqueado(db, gasto_in.cartao_id)
         )
-        _aplicar_gasto(cartao_novo, gasto_in.tipo_pagamento, gasto_in.valor)
+        conta_nova = resolver_conta(db, conta_id=gasto_in.conta_id, cartao_id=gasto_in.cartao_id)
+        if gasto_in.tipo_pagamento in (TipoPagamento.debito, TipoPagamento.pix):
+            debitar(db, conta_nova, gasto_in.valor)
+        else:
+            if cartao_novo.limite < gasto_in.valor:
+                raise HTTPException(status_code=409, detail="Limite insuficiente")
+            cartao_novo.limite -= gasto_in.valor
 
         gasto.descricao = gasto_in.descricao
         gasto.valor = gasto_in.valor
         gasto.data = gasto_in.data
         gasto.categoria_id = gasto_in.categoria_id
         gasto.cartao_id = gasto_in.cartao_id
+        gasto.conta_id = conta_nova.id
         gasto.tipo_pagamento = gasto_in.tipo_pagamento.value
         gasto.parcelas = 1
+        if gasto.compra:
+            gasto.compra.descricao = gasto_in.descricao
+            gasto.compra.valor_total = gasto_in.valor
+            gasto.compra.data_compra = gasto_in.data
+            gasto.compra.tipo_pagamento = gasto_in.tipo_pagamento.value
+            gasto.compra.cartao_id = gasto_in.cartao_id
+            gasto.compra.conta_id = conta_nova.id
+            gasto.compra.categoria_id = gasto_in.categoria_id
+        if gasto.tipo_pagamento == TipoPagamento.credito.value and gasto.cartao_id:
+            mes_ref, ano_ref = referencia_fatura(gasto.data, cartao_novo.data_fatura)
+            referencias.add((gasto.cartao_id, mes_ref, ano_ref))
+        db.flush()
+        _sincronizar_competencias(db, referencias)
         db.commit()
         db.refresh(gasto)
         return gasto
@@ -251,17 +378,45 @@ def editar_gasto_diario(
                 detail="Gasto pago nao pode ser alterado; estorne a fatura primeiro",
             )
 
-        cartao = _buscar_cartao_bloqueado(db, gasto.cartao_id)
+        if _valor_alocado_ativo(db, gasto.id) > 0:
+            raise HTTPException(status_code=409, detail="Parcela com pagamento alocado; estorne a fatura primeiro")
+        cartao = _buscar_cartao_bloqueado(db, gasto.cartao_id) if gasto.cartao_id else None
+        referencias = set()
+        if gasto.tipo_pagamento == TipoPagamento.credito.value and cartao:
+            mes_ref, ano_ref = referencia_fatura(gasto.data, cartao.data_fatura)
+            referencias.add((gasto.cartao_id, mes_ref, ano_ref))
 
         # Se o valor mudou, estorna o antigo e aplica o novo
         if patch.valor is not None and patch.valor != gasto.valor:
-            _estornar_gasto(cartao, gasto)
+            if gasto.compra_id and gasto.parcelas > 1:
+                raise HTTPException(status_code=409, detail="Altere o valor pela operacao da compra completa")
+            conta = resolver_conta(db, conta_id=gasto.conta_id, cartao_id=gasto.cartao_id)
             tipo = TipoPagamento(gasto.tipo_pagamento)
-            _aplicar_gasto(cartao, tipo, patch.valor)
+            diferenca = patch.valor - gasto.valor
+            if tipo in (TipoPagamento.debito, TipoPagamento.pix):
+                if diferenca > 0:
+                    debitar(db, conta, diferenca)
+                else:
+                    creditar(db, conta, -diferenca)
+            elif diferenca > 0:
+                if cartao.limite < diferenca:
+                    raise HTTPException(status_code=409, detail="Limite insuficiente")
+                cartao.limite -= diferenca
+            else:
+                cartao.limite += -diferenca
             gasto.valor = patch.valor
+            if gasto.compra:
+                gasto.compra.valor_total = patch.valor
 
         if patch.descricao is not None:
-            gasto.descricao = patch.descricao
+            irmaos = _itens_compra(db, gasto)
+            for item in irmaos:
+                item.descricao = (
+                    f"{patch.descricao} ({item.numero_parcela}/{item.parcelas})"
+                    if item.parcelas > 1 else patch.descricao
+                )
+            if gasto.compra:
+                gasto.compra.descricao = patch.descricao
         if patch.data is not None:
             if gasto.compra_id and gasto.numero_parcela > 1:
                 irmaos = db.query(GastoDiario).filter(
@@ -279,8 +434,16 @@ def editar_gasto_diario(
                         )
             gasto.data = patch.data
         if patch.categoria_id is not None:
-            gasto.categoria_id = patch.categoria_id
+            for item in _itens_compra(db, gasto):
+                item.categoria_id = patch.categoria_id
+            if gasto.compra:
+                gasto.compra.categoria_id = patch.categoria_id
 
+        if gasto.tipo_pagamento == TipoPagamento.credito.value and cartao:
+            mes_ref, ano_ref = referencia_fatura(gasto.data, cartao.data_fatura)
+            referencias.add((gasto.cartao_id, mes_ref, ano_ref))
+        db.flush()
+        _sincronizar_competencias(db, referencias)
         db.commit()
         db.refresh(gasto)
         return gasto
@@ -310,7 +473,7 @@ def deletar_gasto_diario(id: int, db: Session = Depends(get_db)):
                 detail="Gasto pago nao pode ser excluido; estorne a fatura primeiro",
             )
 
-        cartao = _buscar_cartao_bloqueado(db, gasto.cartao_id)
+        cartao = _buscar_cartao_bloqueado(db, gasto.cartao_id) if gasto.cartao_id else None
         if gasto.compra_id:
             parcelas_pagas = db.query(GastoDiario).filter(
                 GastoDiario.compra_id == gasto.compra_id,
@@ -324,10 +487,29 @@ def deletar_gasto_diario(id: int, db: Session = Depends(get_db)):
                         "estorne a fatura primeiro"
                     ),
                 )
-        _estornar_gasto(cartao, gasto)
-        db.delete(gasto)
+        itens = _itens_compra(db, gasto)
+        if any(_valor_alocado_ativo(db, item.id) > 0 for item in itens):
+            raise HTTPException(status_code=409, detail="Compra com pagamento alocado; estorne a fatura primeiro")
+        total = sum((item.valor for item in itens), Decimal("0"))
+        referencias = set()
+        if gasto.tipo_pagamento == TipoPagamento.credito.value and cartao:
+            for item in itens:
+                mes_ref, ano_ref = referencia_fatura(item.data, cartao.data_fatura)
+                referencias.add((gasto.cartao_id, mes_ref, ano_ref))
+        if gasto.tipo_pagamento in (TipoPagamento.debito.value, TipoPagamento.pix.value):
+            conta = resolver_conta(db, conta_id=gasto.conta_id, cartao_id=gasto.cartao_id)
+            creditar(db, conta, total)
+        else:
+            cartao.limite += total
+        compra = gasto.compra
+        for item in itens:
+            db.delete(item)
+        if compra:
+            compra.situacao = "cancelada"
+        db.flush()
+        _sincronizar_competencias(db, referencias)
         db.commit()
-        return {"mensagem": "Gasto diario deletado com sucesso"}
+        return {"mensagem": "Compra cancelada com sucesso", "itens_cancelados": len(itens)}
     except HTTPException:
         db.rollback()
         raise

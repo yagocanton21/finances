@@ -348,13 +348,16 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
   }
 
   const handleConciliarPagamento = async (parcela: Gasto) => {
+    if (parcela.pago) {
+      alert('Para reabrir esta parcela, estorne o pagamento nos detalhes da fatura.')
+      return
+    }
     const novoStatus = !parcela.pago
-    const acao = novoStatus ? 'marcar esta parcela como paga' : 'voltar esta parcela para pendente'
-    if (!confirm(`Deseja ${acao}? Isso apenas corrige o histórico e não movimenta saldo.`)) return
+    if (!confirm('Registrar o pagamento externo? O limite será restaurado sem debitar novamente o saldo.')) return
 
     setConciliandoId(parcela.id)
     try {
-      const atualizada = await apiRequest<Gasto>(
+      const resposta = await apiRequest<{ gasto: Gasto }>(
         `${apiUrl}/gastos_diarios/${parcela.id}/conciliar-pagamento`,
         {
           method: 'PATCH',
@@ -362,6 +365,7 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
           body: JSON.stringify({ pago: novoStatus })
         }
       )
+      const atualizada = resposta.gasto
       setParcelasDetalhadas(prev => prev.map(p => p.id === atualizada.id ? atualizada : p))
       setGastos(prev => prev.map(p => p.id === atualizada.id ? atualizada : p))
       setGastoSelecionado(prev => prev?.id === atualizada.id ? atualizada : prev)
@@ -369,6 +373,32 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
       alert(error instanceof Error ? error.message : 'Erro ao corrigir o pagamento')
     } finally {
       setConciliandoId(null)
+    }
+  }
+
+  const handleReembolsarCompra = async () => {
+    if (!gastoSelecionado?.compra_id) return
+    const valor = prompt('Valor do reembolso (deixe vazio para todo o saldo não pago):')
+    if (valor === null) return
+    const motivo = prompt('Motivo do reembolso:', 'Reembolso solicitado')
+    if (!motivo) return
+    try {
+      await apiRequest(`${apiUrl}/compras/${encodeURIComponent(gastoSelecionado.compra_id)}/reembolsos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          valor: valor ? Number(valor.replace(',', '.')) : null,
+          motivo,
+          idempotency_key: crypto.randomUUID(),
+        }),
+      })
+      const atualizadas = await fetchAllGastos(
+        `${apiUrl}/gastos_diarios/?compra_id=${encodeURIComponent(gastoSelecionado.compra_id)}`
+      )
+      setParcelasDetalhadas(atualizadas)
+      setGastoSelecionado(atualizadas.find(item => item.id === gastoSelecionado.id) || atualizadas[0] || null)
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Erro ao registrar reembolso')
     }
   }
 
@@ -511,6 +541,12 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
               </div>
             </div>
 
+            {gastoSelecionado?.compra_id && (
+              <button type="button" className="btn" onClick={handleReembolsarCompra}>
+                Registrar reembolso
+              </button>
+            )}
+
             {/* Barra de Progresso */}
             <div className="parcela-progresso">
               <div className="progresso-header">
@@ -550,8 +586,8 @@ export default function GastosList({ apiUrl, activeProfile, viewMode, categorias
                         type="button"
                         className={`timeline-status timeline-status-btn ${isPaga ? 'paga' : 'pendente'}`}
                         onClick={() => handleConciliarPagamento(p)}
-                        disabled={conciliandoId === p.id}
-                        title={isPaga ? 'Voltar para pendente' : 'Registrar pagamento feito fora do sistema'}
+                        disabled={conciliandoId === p.id || isPaga}
+                        title={isPaga ? 'Estorne o pagamento pela fatura para reabrir' : 'Registrar pagamento feito fora do sistema'}
                       >
                         {conciliandoId === p.id ? 'Salvando...' : isPaga ? '✓ Paga' : '⏳ Pendente'}
                       </button>

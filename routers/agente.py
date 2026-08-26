@@ -16,10 +16,15 @@ from app_logging import log_internal_error
 from database import get_db
 import pytz
 
-from models import AuditoriaAgente, Cartao, Categoria, Fatura, GastoDiario, Receita
+from models import AuditoriaAgente, Cartao, Categoria, Compra, Conta, Fatura, GastoDiario, Receita
 from schemas.agente import LancamentoAgenteIn, PagamentoFaturaAgenteIn, TipoLancamento
 from schemas.gastos_diarios import TipoPagamento
-from services.faturas import processar_pagamento_fatura
+from services.contas import creditar, debitar, garantir_conta_cartao
+from services.faturas import (
+    processar_pagamento_fatura,
+    referencia_fatura_atual,
+    sincronizar_fatura,
+)
 
 router = APIRouter()
 CENTAVOS = Decimal("0.01")
@@ -35,6 +40,13 @@ def _mesma_requisicao(requisicao_salva: dict, entrada: LancamentoAgenteIn) -> bo
     salva = dict(requisicao_salva)
     salva.pop("external_id", None)
     return salva == _normalizar_requisicao(entrada)
+
+
+def _mesmo_pagamento(requisicao_salva: dict, entrada: PagamentoFaturaAgenteIn) -> bool:
+    salva = dict(requisicao_salva)
+    salva.pop("external_id", None)
+    atual = jsonable_encoder(entrada.model_dump(exclude={"external_id"}))
+    return salva == atual
 
 
 def autenticar_agente(
@@ -111,6 +123,7 @@ def _validar_fundos(cartao: Cartao, entrada: LancamentoAgenteIn) -> None:
 
 
 def _aplicar_fundos(cartao: Cartao, entrada: LancamentoAgenteIn) -> None:
+    """Compatibilidade para testes e objetos legados sem sessao de banco."""
     if entrada.tipo_lancamento == TipoLancamento.receita:
         cartao.saldo += entrada.valor
     elif entrada.tipo_pagamento in (TipoPagamento.debito, TipoPagamento.pix):
@@ -122,8 +135,25 @@ def _aplicar_fundos(cartao: Cartao, entrada: LancamentoAgenteIn) -> None:
 @router.get("/contas", dependencies=[Depends(autenticar_agente)])
 def listar_contas(db: Session = Depends(get_db)):
     return [
-        {"id": c.id, "nome": c.nome, "dono": c.dono, "saldo": c.saldo, "limite": c.limite}
+        {
+            "id": c.id,
+            "cartao_id": c.id,
+            "conta_pagamento_id": c.conta_padrao_id,
+            "nome": c.nome,
+            "dono": c.dono,
+            "saldo": c.conta_padrao.saldo if c.conta_padrao else c.saldo,
+            "limite": c.limite,
+            "limite_total": c.limite_total,
+        }
         for c in db.query(Cartao).filter(Cartao.ativo.is_(True)).order_by(Cartao.nome).all()
+    ]
+
+
+@router.get("/contas-bancarias", dependencies=[Depends(autenticar_agente)])
+def listar_contas_bancarias(db: Session = Depends(get_db)):
+    return [
+        {"id": conta.id, "nome": conta.nome, "dono": conta.dono, "saldo": conta.saldo}
+        for conta in db.query(Conta).filter(Conta.ativa.is_(True)).order_by(Conta.nome).all()
     ]
 
 
@@ -205,9 +235,15 @@ def registrar_lancamento(
 
     try:
         cartao = _resolver_cartao(db, entrada, bloquear=True)
+        conta = garantir_conta_cartao(db, cartao)
         categoria = _resolver_categoria(db, entrada)
         _validar_fundos(cartao, entrada)
-        _aplicar_fundos(cartao, entrada)
+        if entrada.tipo_lancamento == TipoLancamento.receita:
+            creditar(db, conta, entrada.valor)
+        elif entrada.tipo_pagamento in (TipoPagamento.debito, TipoPagamento.pix):
+            debitar(db, conta, entrada.valor)
+        else:
+            cartao.limite -= entrada.valor
 
         ids = []
         entidade = entrada.tipo_lancamento.value
@@ -217,6 +253,7 @@ def registrar_lancamento(
                 valor=entrada.valor,
                 data=entrada.data,
                 cartao_id=cartao.id,
+                conta_id=conta.id,
                 categoria_id=categoria.id if categoria else None,
                 origem=agente,
                 external_id=external_id,
@@ -225,7 +262,20 @@ def registrar_lancamento(
             db.flush()
             ids.append(receita.id)
         else:
-            compra_id = str(uuid4()) if entrada.parcelas > 1 else None
+            compra_id = str(uuid4())
+            compra = Compra(
+                id=compra_id,
+                descricao=entrada.descricao,
+                valor_total=entrada.valor,
+                data_compra=entrada.data,
+                parcelas=entrada.parcelas,
+                tipo_pagamento=entrada.tipo_pagamento.value,
+                cartao_id=cartao.id if entrada.tipo_pagamento == TipoPagamento.credito else None,
+                conta_id=conta.id,
+                categoria_id=categoria.id if categoria else None,
+                situacao="ativa",
+            )
+            db.add(compra)
             valor_parcela = (entrada.valor / entrada.parcelas).quantize(
                 CENTAVOS, rounding=ROUND_HALF_UP
             )
@@ -245,6 +295,7 @@ def registrar_lancamento(
                     numero_parcela=numero,
                     categoria_id=categoria.id if categoria else None,
                     cartao_id=cartao.id,
+                    conta_id=conta.id,
                     pago=False,
                     origem=agente,
                     external_id=external_id,
@@ -317,24 +368,19 @@ def consultar_lancamento(external_id: str, db: Session = Depends(get_db)):
 def _resumo_pagamento_agente(
     db: Session, cartao: Cartao, mes_ref: int, ano_ref: int
 ):
-    fatura = db.query(Fatura).filter(
-        Fatura.cartao_id == cartao.id,
-        Fatura.mes_ref == mes_ref,
-        Fatura.ano_ref == ano_ref,
-    ).first()
-    gastos = db.query(GastoDiario).filter(
-        GastoDiario.cartao_id == cartao.id,
-        GastoDiario.tipo_pagamento == TipoPagamento.credito.value,
-    ).all()
-    from services.faturas import pertence_a_fatura
-
-    gastos_da_fatura = [
-        gasto for gasto in gastos
-        if pertence_a_fatura(gasto, cartao.data_fatura, mes_ref, ano_ref)
-    ]
+    fatura, gastos_da_fatura = sincronizar_fatura(
+        db, cartao, mes_ref, ano_ref, criar=False
+    )
     total_lancado = sum((gasto.valor for gasto in gastos_da_fatura), Decimal("0"))
     total = max(fatura.total if fatura else Decimal("0"), total_lancado)
-    total_pago = sum((item.valor for item in fatura.pagamentos), Decimal("0")) if fatura else Decimal("0")
+    total_pago = (
+        sum(
+            (item.valor for item in fatura.pagamentos if item.estornado_em is None),
+            Decimal("0"),
+        )
+        if fatura
+        else Decimal("0")
+    )
     return {
         "cartao_id": cartao.id,
         "cartao": cartao.nome,
@@ -355,8 +401,9 @@ def prever_pagamento_fatura(
     cartao = _resolver_conta(
         db, conta_id=entrada.conta_id, conta=entrada.conta, bloquear=False
     )
+    mes_padrao, ano_padrao = referencia_fatura_atual(hoje, cartao.data_fatura)
     resumo = _resumo_pagamento_agente(
-        db, cartao, entrada.mes_ref or hoje.month, entrada.ano_ref or hoje.year
+        db, cartao, entrada.mes_ref or mes_padrao, entrada.ano_ref or ano_padrao
     )
     if resumo["saldo_restante"] <= 0:
         raise HTTPException(status_code=409, detail="Nao ha fatura em aberto")
@@ -387,6 +434,11 @@ def _registrar_pagamento_agente(
         AuditoriaAgente.external_id == external_id
     ).first()
     if existente:
+        if not _mesmo_pagamento(existente.requisicao, entrada):
+            raise HTTPException(
+                status_code=409,
+                detail="Chave de idempotencia utilizada com outro pagamento",
+            )
         return {**existente.resposta, "idempotente": True}
     if not entrada.confirmado:
         raise HTTPException(
@@ -398,8 +450,9 @@ def _registrar_pagamento_agente(
     cartao = _resolver_conta(
         db, conta_id=entrada.conta_id, conta=entrada.conta, bloquear=False
     )
-    mes_ref = entrada.mes_ref or hoje.month
-    ano_ref = entrada.ano_ref or hoje.year
+    mes_padrao, ano_padrao = referencia_fatura_atual(hoje, cartao.data_fatura)
+    mes_ref = entrada.mes_ref or mes_padrao
+    ano_ref = entrada.ano_ref or ano_padrao
     resposta = processar_pagamento_fatura(
         db,
         cartao_id=cartao.id,
@@ -410,6 +463,7 @@ def _registrar_pagamento_agente(
         origem=origem,
         movimentar_saldo=movimentar_saldo,
         restaurar_limite=True,
+        conta_id=entrada.conta_pagamento_id,
         agora=hoje,
     )
     resposta.update({"agente": agente, "external_id": external_id})
@@ -420,7 +474,7 @@ def _registrar_pagamento_agente(
         entidade="fatura",
         entidade_id=resposta["fatura_id"],
         status="registrado",
-        requisicao=jsonable_encoder(entrada),
+        requisicao=jsonable_encoder(entrada.model_dump(exclude={"external_id"})),
         resposta=jsonable_encoder(resposta),
     )
     db.add(auditoria)
@@ -503,9 +557,10 @@ def estornar_lancamento(
             cartao = db.query(Cartao).filter(
                 Cartao.id == gastos[0].cartao_id
             ).with_for_update().first()
+            conta = garantir_conta_cartao(db, cartao)
             total = sum((g.valor for g in gastos), Decimal("0"))
             if gastos[0].tipo_pagamento in (TipoPagamento.debito.value, TipoPagamento.pix.value):
-                cartao.saldo += total
+                creditar(db, conta, total)
             else:
                 cartao.limite += total
             for gasto in gastos:
@@ -519,9 +574,10 @@ def estornar_lancamento(
             cartao = db.query(Cartao).filter(
                 Cartao.id == receita.cartao_id
             ).with_for_update().first()
-            if cartao.saldo < receita.valor:
+            conta = garantir_conta_cartao(db, cartao)
+            if conta.saldo < receita.valor:
                 raise HTTPException(status_code=409, detail="Saldo insuficiente para estornar receita")
-            cartao.saldo -= receita.valor
+            debitar(db, conta, receita.valor)
             db.delete(receita)
 
         resposta = {

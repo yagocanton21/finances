@@ -17,7 +17,8 @@ class GastoDiarioBase(BaseModel):
     valor: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
     data: datetime
     categoria_id: Optional[int] = None
-    cartao_id: int = Field(gt=0)
+    cartao_id: Optional[int] = Field(default=None, gt=0)
+    conta_id: Optional[int] = Field(default=None, gt=0)
     tipo_pagamento: TipoPagamento
     parcelas: int = Field(default=1, ge=1, le=120)
 
@@ -25,6 +26,10 @@ class GastoDiarioBase(BaseModel):
     def validar_parcelamento(self):
         if self.tipo_pagamento != TipoPagamento.credito and self.parcelas != 1:
             raise ValueError("Parcelamento so e permitido para pagamentos em credito")
+        if self.tipo_pagamento == TipoPagamento.credito and not self.cartao_id:
+            raise ValueError("Pagamento no credito requer cartao_id")
+        if self.tipo_pagamento != TipoPagamento.credito and not (self.conta_id or self.cartao_id):
+            raise ValueError("Pagamento requer conta_id")
         return self
 
 

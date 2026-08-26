@@ -4,6 +4,7 @@ from app_logging import log_internal_error
 from database import get_db
 from models import Categoria
 from schemas import CategoriaBase
+from sqlalchemy.exc import IntegrityError
 
 router = APIRouter()
 
@@ -16,6 +17,9 @@ def criar_categoria(categoria_in: CategoriaBase, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(db_categoria)
         return db_categoria
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail='Categoria ja cadastrada')
     except Exception:
         db.rollback()
         log_internal_error("criar_categoria")
@@ -54,6 +58,9 @@ def atualizar_categoria(id: int, categoria_in: CategoriaBase, db: Session = Depe
         db.commit()
         db.refresh(db_categoria)
         return db_categoria
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail='Categoria ja cadastrada')
     except HTTPException:
         raise
     except Exception:

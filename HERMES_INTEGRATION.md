@@ -24,7 +24,9 @@ pago no limite disponível do cartão.
 
 ## Fluxo recomendado
 
-1. Consulte `GET /agent/v1/contas` e `GET /agent/v1/categorias`.
+1. Consulte `GET /agent/v1/contas` e `GET /agent/v1/categorias`. Para escolher
+   a origem de um pagamento de fatura, consulte também
+   `GET /agent/v1/contas-bancarias`.
 2. Monte um lançamento estruturado e envie para `POST /agent/v1/lancamentos/preview`.
 3. Se os dados estiverem corretos, confirme com `POST /agent/v1/lancamentos`.
 4. Em timeout, repita com a mesma `Idempotency-Key`; a API não duplicará o registro.

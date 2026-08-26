@@ -8,6 +8,9 @@ class CartaoBase(BaseModel):
     nome: str = Field(min_length=1, max_length=120)
     dono: str = Field(default="Eu", min_length=1, max_length=80)
     limite: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+    limite_total: Optional[Decimal] = Field(
+        default=None, ge=0, max_digits=12, decimal_places=2
+    )
     saldo: Decimal = Field(default=Decimal("0"), max_digits=12, decimal_places=2)
     data_fatura: int = Field(ge=1, le=28)
     dia_vencimento: int = Field(ge=1, le=31)
@@ -38,6 +41,7 @@ class PagarFaturaIn(BaseModel):
     mes_ref: Optional[int] = Field(default=None, ge=1, le=12)
     ano_ref: Optional[int] = Field(default=None, ge=1900, le=2200)
     idempotency_key: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    conta_id: Optional[int] = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def validar_ref(self):

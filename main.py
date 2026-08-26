@@ -11,7 +11,18 @@ from sqlalchemy import text
 
 from app_logging import configure_logging, normalize_request_id, request_id_context
 from database import engine
-from routers import agente, aportes_reserva, cartoes, categorias, gastos_diarios, receitas, relatorios
+from routers import (
+    agente,
+    aportes_reserva,
+    cartoes,
+    categorias,
+    compras,
+    contas,
+    gastos_diarios,
+    planejamento,
+    receitas,
+    relatorios,
+)
 
 configure_logging()
 logger = logging.getLogger("financas.http")
@@ -114,4 +125,7 @@ app.include_router(
 app.include_router(receitas.router, prefix="/receitas", tags=["receitas"])
 app.include_router(relatorios.router, prefix="/relatorios", tags=["relatorios"])
 app.include_router(aportes_reserva.router, prefix="/aportes_reserva", tags=["reserva"])
+app.include_router(contas.router, prefix="/contas", tags=["contas"])
+app.include_router(compras.router, prefix="/compras", tags=["compras"])
+app.include_router(planejamento.router, prefix="/planejamento", tags=["planejamento"])
 app.include_router(agente.router, prefix="/agent/v1", tags=["integracao Hermes"])

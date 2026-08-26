@@ -13,11 +13,16 @@ class GastoDiario(Base):
     data = Column(DateTime, nullable=False, index=True)
     tipo_pagamento = Column(String, nullable=False, index=True)
     parcelas = Column(Integer, nullable=False, default=1)
-    compra_id = Column(String(36), nullable=True, index=True)
+    compra_id = Column(
+        String(36), ForeignKey("compras.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     numero_parcela = Column(Integer, nullable=False, default=1)
     categoria_id = Column(Integer, ForeignKey("categorias.id"), nullable=True)
     cartao_id = Column(
-        Integer, ForeignKey("cartoes.id", ondelete="RESTRICT"), nullable=False
+        Integer, ForeignKey("cartoes.id", ondelete="RESTRICT"), nullable=True
+    )
+    conta_id = Column(
+        Integer, ForeignKey("contas.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     pago = Column(Boolean, nullable=False, default=False, index=True)
     origem = Column(String(30), nullable=False, default="frontend", index=True)
@@ -25,3 +30,5 @@ class GastoDiario(Base):
 
     categoria = relationship("Categoria", back_populates="gastos")
     cartao = relationship("Cartao", back_populates="gastos")
+    conta = relationship("Conta", back_populates="gastos")
+    compra = relationship("Compra", back_populates="itens")

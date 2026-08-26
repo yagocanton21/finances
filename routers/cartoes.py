@@ -5,16 +5,21 @@ from typing import Optional
 import pytz
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app_logging import log_internal_error
 from database import get_db
-from models import Cartao, Fatura, GastoDiario
+from models import Cartao, Conta, Fatura, GastoDiario
 from schemas import CartaoBase
 from schemas.cartoes import PagarFaturaIn
+from schemas.contas import EstornoIn
+from services.contas import garantir_conta_cartao
 from services.faturas import (
+    estornar_pagamento_fatura,
     pertence_a_fatura,
     processar_pagamento_fatura,
     referencia_fatura_atual,
+    sincronizar_fatura,
 )
 
 router = APIRouter()
@@ -40,7 +45,20 @@ def _calcular_fatura_do_mes(
 @router.post("/")
 def criar_cartao(cartao_in: CartaoBase, db: Session = Depends(get_db)):
     try:
-        cartao = Cartao(**cartao_in.model_dump())
+        dados = cartao_in.model_dump(exclude={"limite_total"})
+        conta = Conta(
+            nome=cartao_in.nome,
+            dono=cartao_in.dono,
+            tipo="corrente",
+            saldo=cartao_in.saldo,
+        )
+        db.add(conta)
+        db.flush()
+        cartao = Cartao(
+            **dados,
+            limite_total=cartao_in.limite_total or cartao_in.limite,
+            conta_padrao_id=conta.id,
+        )
         db.add(cartao)
         db.commit()
         db.refresh(cartao)
@@ -70,6 +88,7 @@ def listar_cartoes(db: Session = Depends(get_db)):
 
     resultado = []
     for cartao in cartoes:
+        conta = garantir_conta_cartao(db, cartao, bloquear=False)
         mes_fatura, ano_fatura = referencia_fatura_atual(hoje, cartao.data_fatura)
         dados = {
             coluna.name: getattr(cartao, coluna.name)
@@ -81,6 +100,9 @@ def listar_cartoes(db: Session = Depends(get_db)):
             mes_fatura,
             ano_fatura,
         )
+        dados["saldo"] = conta.saldo
+        dados["conta_padrao_id"] = conta.id
+        dados["limite_total"] = cartao.limite_total
         resultado.append(dados)
     return resultado
 
@@ -90,7 +112,10 @@ def buscar_cartao(id: int, db: Session = Depends(get_db)):
     cartao = db.query(Cartao).filter(Cartao.id == id, Cartao.ativo == True).first()
     if not cartao:
         raise HTTPException(status_code=404, detail="Cartao nao encontrado")
-    return cartao
+    conta = garantir_conta_cartao(db, cartao, bloquear=False)
+    dados = {coluna.name: getattr(cartao, coluna.name) for coluna in cartao.__table__.columns}
+    dados["saldo"] = conta.saldo
+    return dados
 
 
 @router.put("/{id}")
@@ -101,8 +126,24 @@ def atualizar_cartao(
         cartao = db.query(Cartao).filter(Cartao.id == id, Cartao.ativo == True).first()
         if not cartao:
             raise HTTPException(status_code=404, detail="Cartao nao encontrado")
-        for campo, valor in cartao_in.model_dump().items():
+        limite_total = (
+            cartao_in.limite_total
+            if cartao_in.limite_total is not None
+            else max(cartao.limite_total, cartao_in.limite)
+        )
+        if cartao_in.limite > limite_total:
+            raise HTTPException(
+                status_code=409,
+                detail="Limite total nao pode ser menor que o limite disponivel",
+            )
+        for campo, valor in cartao_in.model_dump(
+            exclude={"limite_total", "saldo", "fatura_atual", "ativo"}
+        ).items():
             setattr(cartao, campo, valor)
+        cartao.limite_total = limite_total
+        conta = garantir_conta_cartao(db, cartao)
+        conta.nome = cartao_in.nome
+        conta.dono = cartao_in.dono
         db.commit()
         db.refresh(cartao)
         return cartao
@@ -140,6 +181,9 @@ def pagar_fatura(
     pagamento: Optional[PagarFaturaIn] = Body(default=None),
     db: Session = Depends(get_db),
 ):
+    hoje = None
+    mes_ref = None
+    ano_ref = None
     try:
         cartao = (
             db.query(Cartao)
@@ -162,6 +206,7 @@ def pagar_fatura(
             ano_ref=ano_ref,
             valor=pagamento.valor if pagamento else None,
             idempotency_key=pagamento.idempotency_key if pagamento else None,
+            conta_id=pagamento.conta_id if pagamento else None,
             origem="sistema",
             movimentar_saldo=True,
             agora=hoje,
@@ -171,6 +216,30 @@ def pagar_fatura(
     except HTTPException:
         db.rollback()
         raise
+    except IntegrityError:
+        db.rollback()
+        if (
+            pagamento
+            and pagamento.idempotency_key
+            and mes_ref is not None
+            and ano_ref is not None
+            and hoje is not None
+        ):
+            resposta = processar_pagamento_fatura(
+                db,
+                cartao_id=id,
+                mes_ref=mes_ref,
+                ano_ref=ano_ref,
+                valor=pagamento.valor,
+                idempotency_key=pagamento.idempotency_key,
+                origem="sistema",
+                movimentar_saldo=True,
+                conta_id=pagamento.conta_id,
+                agora=hoje,
+            )
+            db.commit()
+            return resposta
+        raise HTTPException(status_code=409, detail="Pagamento em conflito")
     except Exception:
         db.rollback()
         log_internal_error("pagar_fatura")
@@ -192,17 +261,8 @@ def consultar_fatura(
     mes_atual, ano_atual = referencia_fatura_atual(hoje, cartao.data_fatura)
     mes = mes_ref or mes_atual
     ano = ano_ref or ano_atual
-    fatura = (
-        db.query(Fatura)
-        .filter(Fatura.cartao_id == id, Fatura.mes_ref == mes, Fatura.ano_ref == ano)
-        .first()
-    )
+    fatura, gastos = sincronizar_fatura(db, cartao, mes, ano, criar=False)
     if not fatura:
-        gastos = db.query(GastoDiario).filter(
-            GastoDiario.cartao_id == id,
-            GastoDiario.tipo_pagamento == "credito",
-            GastoDiario.pago.is_(False),
-        ).all()
         total = _calcular_fatura_do_mes(gastos, cartao.data_fatura, mes, ano)
         return {
             "mes_ref": mes,
@@ -214,7 +274,8 @@ def consultar_fatura(
             "pagamentos": [],
         }
 
-    total_pago = sum((item.valor for item in fatura.pagamentos), Decimal("0"))
+    pagamentos_ativos = [item for item in fatura.pagamentos if item.estornado_em is None]
+    total_pago = sum((item.valor for item in pagamentos_ativos), Decimal("0"))
     return {
         "id": fatura.id,
         "mes_ref": fatura.mes_ref,
@@ -229,7 +290,36 @@ def consultar_fatura(
                 "valor": item.valor,
                 "data_pagamento": item.data_pagamento,
                 "situacao": item.situacao,
+                "origem": item.origem,
+                "conta_id": item.conta_id,
+                "estornado_em": item.estornado_em,
             }
             for item in sorted(fatura.pagamentos, key=lambda item: item.data_pagamento)
         ],
     }
+
+
+@router.post("/{id}/pagamentos/{pagamento_id}/estornar")
+def estornar_pagamento(
+    id: int,
+    pagamento_id: int,
+    entrada: EstornoIn,
+    db: Session = Depends(get_db),
+):
+    try:
+        resposta = estornar_pagamento_fatura(
+            db,
+            cartao_id=id,
+            pagamento_id=pagamento_id,
+            motivo=entrada.motivo,
+            idempotency_key=entrada.idempotency_key,
+        )
+        db.commit()
+        return resposta
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        log_internal_error("estornar_pagamento_fatura")
+        raise HTTPException(status_code=500, detail="Erro ao estornar pagamento de fatura")
